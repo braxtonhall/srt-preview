@@ -19,5 +19,7 @@ ffmpeg -i "$INPUT" \
   -preset veryslow \
   -c:a aac \
   -b:a 32k \
+  -g 30 \
+  -x265-params keyint=30:min-keyint=30:no-open-gop=1 \
   -movflags +faststart \
   "$OUTPUT"
