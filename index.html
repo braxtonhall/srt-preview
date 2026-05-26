@@ -1555,6 +1555,7 @@
     }
 
     function applyValue(val) {
+      input.closest('.sub-timing-details').open = true;
       const ev = editStates.get(index);
       const rounded = Math.round(Math.max(0, val) * 1000) / 1000;
       ev[field] = rounded;
@@ -1573,6 +1574,7 @@
     }
 
     input.addEventListener('input', () => {
+      input.closest('.sub-timing-details').open = true;
       const parsed = parseSRTTime(input.value);
       input.classList.toggle('invalid', isNaN(parsed));
       if (!isNaN(parsed)) {
@@ -1627,6 +1629,7 @@
       input = subtitleSidebar.querySelector(`.sub-timing-input[data-field="${field}"]`);
     }
     if (!input) return;
+    input.closest('.sub-timing-details').open = true;
     input.value = formatSRTTime(value);
     input.classList.remove('invalid');
   }
@@ -2519,7 +2522,7 @@
 
       ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       const textW = ctx.measureText(label).width;
-      const labelX = Math.max(4, Math.min(w - textW - 8, rx + rw / 2 - textW / 2));
+      const labelX = Math.max(4, Math.min(w - textW - 8, rx + 2));
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect(labelX - 2, 3, textW + 4, 11);
       ctx.fillStyle = isEditing ? '#fff' : '#bbb';
@@ -2537,8 +2540,20 @@
       const heSub = editStates.has(hoverEdge.index) ? editStates.get(hoverEdge.index) : subtitles[hoverEdge.index];
       const hex = timeToPixel(heSub[hoverEdge.edge]);
       if (hex >= 0 && hex <= w) {
-        ctx.fillStyle = 'rgba(255,255,200,0.5)';
-        ctx.fillRect(hex - 4, waveTop, 8, h - waveTop);
+        const subEndX = timeToPixel(heSub.end);
+        const subStartX = timeToPixel(heSub.start);
+        let fillX, fillW;
+        if (hoverEdge.edge === 'start') {
+          fillX = hex;
+          fillW = Math.min(4, subEndX - hex);
+        } else {
+          fillW = Math.min(4, hex - subStartX);
+          fillX = hex - fillW;
+        }
+        if (fillW > 0) {
+          ctx.fillStyle = 'rgba(255,255,200,0.5)';
+          ctx.fillRect(fillX, waveTop, fillW, h - waveTop);
+        }
         ctx.strokeStyle = 'rgba(255,255,100,0.9)';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -2661,15 +2676,15 @@
     let bestDist = EDGE_PX + 1;
     let bestEdge = null;
 
-    for (let i = 0; i < subtitles.length; i++) {
-      const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
+    const containing = findContainingSubtitle(t);
+    if (containing !== -1) {
+      const sub = editStates.has(containing) ? editStates.get(containing) : subtitles[containing];
       const sx = timeToPixel(sub.start);
       const ex = timeToPixel(sub.end);
-
       const dStart = Math.abs(cssX - sx);
       const dEnd = Math.abs(cssX - ex);
-      if (dStart <= EDGE_PX && dStart < bestDist) { bestDist = dStart; bestEdge = { index: i, edge: 'start' }; }
-      if (dEnd <= EDGE_PX && dEnd < bestDist) { bestDist = dEnd; bestEdge = { index: i, edge: 'end' }; }
+      if (dStart <= EDGE_PX && dStart <= dEnd) { bestDist = dStart; bestEdge = { index: containing, edge: 'start' }; }
+      else if (dEnd <= EDGE_PX) { bestEdge = { index: containing, edge: 'end' }; }
     }
 
     if (bestEdge && authToken) {
@@ -2689,6 +2704,22 @@
 
     video.currentTime = Math.max(0, Math.min(waveformDuration || Infinity, t));
   });
+
+  function findContainingSubtitle(time) {
+    let bestIndex = -1;
+    let bestCenterDist = Infinity;
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
+      if (time >= sub.start && time <= sub.end) {
+        const centerDist = Math.abs(time - (sub.start + sub.end) / 2);
+        if (centerDist < bestCenterDist) {
+          bestCenterDist = centerDist;
+          bestIndex = i;
+        }
+      }
+    }
+    return bestIndex;
+  }
 
   function openEditForWaveform(i) {
     if (editStates.has(i)) return;
@@ -2711,17 +2742,17 @@
     hoverTime = pixelToTime(cssX);
 
     hoverEdge = null;
-    let bestDist = 9;
     const EDGE_PX = 8;
     if (authToken) {
-      for (let i = 0; i < subtitles.length; i++) {
-        const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
+      const containing = findContainingSubtitle(hoverTime);
+      if (containing !== -1) {
+        const sub = editStates.has(containing) ? editStates.get(containing) : subtitles[containing];
         const sx = timeToPixel(sub.start);
         const ex = timeToPixel(sub.end);
         const dStart = Math.abs(cssX - sx);
         const dEnd = Math.abs(cssX - ex);
-        if (dStart <= EDGE_PX && dStart < bestDist) { bestDist = dStart; hoverEdge = { index: i, edge: 'start' }; }
-        if (dEnd <= EDGE_PX && dEnd < bestDist) { bestDist = dEnd; hoverEdge = { index: i, edge: 'end' }; }
+        if (dStart <= EDGE_PX && dStart <= dEnd) { hoverEdge = { index: containing, edge: 'start' }; }
+        else if (dEnd <= EDGE_PX) { hoverEdge = { index: containing, edge: 'end' }; }
       }
     }
     waveformCanvas.style.cursor = dragState ? 'col-resize' : (hoverEdge ? 'col-resize' : 'crosshair');
