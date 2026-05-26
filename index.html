@@ -4,11 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Video Player</title>
+<script src="https://accounts.google.com/gsi/client" async defer onload="onGISLoad()"></script>
 <style>
   * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+  }
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   body {
@@ -105,6 +112,34 @@
 
   .refresh-icon {
     display: inline-block;
+  }
+
+  .auth-area {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .auth-btn {
+    background: #1e1e1e;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .auth-btn:hover {
+    background: #333;
+  }
+
+  .auth-user {
+    font-size: 0.75rem;
+    color: #666;
   }
 
   .main-area {
@@ -272,10 +307,68 @@
     font-size: 0.82rem;
     line-height: 1.4;
     transition: background 0.1s;
+    position: relative;
   }
 
   .subtitle-sidebar .sub-row:hover {
     background: #181818;
+    z-index: 1;
+  }
+
+  .sub-row-tools {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .sub-insert-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background: none;
+    border: none;
+    color: #3a6ea5;
+    font-size: 0.85rem;
+    padding: 0 4px;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+
+  .sub-insert-btn:hover {
+    color: #6aaaf0;
+  }
+
+  .sub-insert-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    z-index: 100;
+    min-width: 160px;
+    overflow: hidden;
+  }
+
+  .sub-insert-menu button {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #ccc;
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .sub-insert-menu button:hover {
+    background: #2a2a2a;
+    color: #fff;
   }
 
   .subtitle-sidebar .sub-row.active {
@@ -304,6 +397,7 @@
 
   .subtitle-sidebar .sub-time {
     flex-shrink: 0;
+    align-self: center;
     color: #444;
     font-size: 0.65rem;
     margin-left: auto;
@@ -325,6 +419,274 @@
     font-size: 0.9rem;
     font-style: italic;
   }
+
+  /* ---- Edit mode ---- */
+
+  .subtitle-sidebar .sub-row.editing {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+    font-style: italic;
+    cursor: default;
+  }
+
+  .sub-edit-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 6px;
+  }
+
+  .sub-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .sub-edit-input {
+    flex: 1;
+    background: #1a1a1a;
+    color: #ddd;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 0.8rem;
+    font-family: inherit;
+    font-style: normal;
+    outline: none;
+    min-width: 0;
+  }
+
+  .sub-edit-input:focus {
+    border-color: #3a6ea5;
+  }
+
+  .sub-add-btn {
+    flex-shrink: 0;
+    background: #1a1a1a;
+    color: #555;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 3px 7px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-style: normal;
+  }
+
+  .sub-add-btn:hover {
+    color: #aaa;
+    border-color: #444;
+  }
+
+  .sub-edit-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 2px;
+  }
+
+  .sub-save-btn {
+    background: #2a5a8a;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-style: normal;
+  }
+
+  .sub-save-btn:hover {
+    background: #3a6ea5;
+  }
+
+  .sub-save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sub-cancel-btn {
+    background: none;
+    color: #555;
+    border: none;
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 4px 4px;
+    font-style: normal;
+  }
+
+  .sub-cancel-btn:hover {
+    color: #999;
+  }
+
+  .sub-delete-btn {
+    background: none;
+    color: #744;
+    border: none;
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 4px 4px;
+    font-style: normal;
+  }
+
+  .sub-delete-btn:hover {
+    color: #e06060;
+  }
+
+  .sub-edit-error {
+    font-size: 0.7rem;
+    color: #e06060;
+    font-style: normal;
+    margin-left: 4px;
+  }
+
+  .sub-timing-details {
+    margin-top: 4px;
+  }
+
+  .sub-timing-details summary {
+    font-size: 0.75rem;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-style: normal;
+  }
+
+  .sub-timing-details summary::-webkit-details-marker { display: none; }
+
+  .sub-timing-details summary::before {
+    content: '▶';
+    font-size: 0.55rem;
+    display: inline-block;
+    transition: transform 0.15s;
+  }
+
+  .sub-timing-details[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  .sub-timing-fields {
+    padding: 4px 0 2px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sub-timing-label {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: #555;
+    font-style: normal;
+    width: 30px;
+  }
+
+  .sub-timing-input {
+    font-family: monospace;
+  }
+
+  .sub-timing-step-btn {
+    flex-shrink: 0;
+    background: #1a1a1a;
+    color: #555;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    font-style: normal;
+    line-height: 1;
+  }
+
+  .sub-timing-step-btn:hover {
+    color: #bbb;
+    border-color: #444;
+  }
+
+  .sub-now-btn {
+    flex-shrink: 0;
+    background: #1a1a1a;
+    color: #555;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 2px 5px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    font-style: normal;
+    line-height: 1;
+  }
+
+  .sub-now-btn:hover:not(:disabled) {
+    color: #bbb;
+    border-color: #444;
+  }
+
+  .sub-now-btn:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+  }
+
+  .sub-timing-input.invalid {
+    border-color: #c04040;
+    background: #1f1010;
+  }
+
+  .sub-edit-time {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: #444;
+    font-size: 0.65rem;
+    font-style: normal;
+    cursor: pointer;
+    padding-left: 4px;
+  }
+
+  .sub-edit-time:hover {
+    color: #888;
+  }
+
+  .sub-status-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    font-size: 0.8rem;
+    padding: 0 5px 0 0;
+    line-height: 1;
+    cursor: default;
+  }
+
+  .sub-status-btn.sub-status-empty   { color: #333; }
+  .sub-status-btn.sub-status-flagged { color: #c8a835; }
+  .sub-status-btn.sub-status-approved { color: #4a8; }
+
+  .subtitle-sidebar.edit-enabled .sub-status-btn {
+    cursor: pointer;
+  }
+
+  .subtitle-sidebar.edit-enabled .sub-status-btn:hover {
+    filter: brightness(1.4);
+  }
+
+  .sub-edit-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #3a6ea5;
+    font-size: 0.85rem;
+    padding: 0 4px;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.15s;
+  }
+
+  .sub-edit-btn:hover {
+    color: #6aaaf0;
+  }
+
+  /* ---- End edit mode ---- */
 
   .skip-bar {
     display: none;
@@ -423,6 +785,11 @@
     <span class="refresh-icon">&#x21bb;</span> Refresh
   </button>
   <span id="subtitleStatus" style="font-size:0.8rem;color:#666;"></span>
+  <div class="auth-area">
+    <button class="auth-btn" id="signInBtn">Sign in to edit</button>
+    <span class="auth-user" id="authUserDisplay" style="display:none;"></span>
+    <button class="auth-btn" id="signOutBtn" style="display:none;">Sign out</button>
+  </div>
 </div>
 
 <div class="main-area" id="mainArea">
@@ -482,6 +849,8 @@
     },
   ];
 
+  const CLIENT_ID = '191546084177-4e125svao3jpkgn57kd617nmtr8h92c4.apps.googleusercontent.com';
+
   // ============ STATE ============
   let subtitles = [];
   let subtitleMode = 'source';
@@ -489,6 +858,14 @@
   let currentEpisode = 0;
   let cachedPassword = null;
   let objectUrl = null;
+
+  // Auth + edit state
+  let authToken = null;
+  let tokenClient = null;
+  let editingIndex = null;  // index of the subtitle row currently open for editing
+  let editValues = null;    // { source1, source2, trans1, trans2 }
+  let sheetNameCache = {};        // "spreadsheetId:gid" -> sheet tab name
+  let statusDebounceTimers = {};  // subtitle index -> timeout ID
 
   const PASSWORD_STORAGE_KEY = 'sub_preview_password';
   const PBKDF2_ITERATIONS = 100000;
@@ -519,6 +896,9 @@
   const loadError = document.getElementById('loadError');
   const loadErrorText = document.getElementById('loadErrorText');
   const retryBtn = document.getElementById('retryBtn');
+  const signInBtn = document.getElementById('signInBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
+  const authUserDisplay = document.getElementById('authUserDisplay');
 
   // ============ EPISODE DROPDOWN ============
   EPISODES.forEach((ep, i) => {
@@ -545,6 +925,15 @@
       if (aa[i] !== bb[i]) return false;
     }
     return true;
+  }
+
+  function parseSpreadsheetUrl(csvUrl) {
+    const url = new URL(csvUrl);
+    const match = url.pathname.match(/\/d\/([^/]+)/);
+    return {
+      spreadsheetId: match ? match[1] : null,
+      gid: url.searchParams.get('gid'),
+    };
   }
 
   // ============ CSV PARSING ============
@@ -603,8 +992,10 @@
   async function fetchSubtitles(url) {
     if (subtitleLoading) return;
     subtitleLoading = true;
+    editingIndex = null;
+    editValues = null;
     refreshBtn.classList.add('spinning');
-    subtitleStatus.textContent = 'Loading\u2026';
+    subtitleStatus.textContent = 'Loading…';
     subtitleStatus.style.color = '#888';
 
     try {
@@ -686,14 +1077,18 @@
     subtitleOverlay.classList.remove('no-subs');
     subtitleOverlay.innerHTML = '';
 
+    const display = (editingIndex !== null && sub === subtitles[editingIndex] && editValues)
+      ? { ...sub, ...editValues }
+      : sub;
+
     const lines = [];
     if (subtitleMode === 'source' || subtitleMode === 'both') {
-      if (sub.source1) lines.push(sub.source1);
-      if (sub.source2) lines.push(sub.source2);
+      if (display.source1) lines.push(display.source1);
+      if (display.source2) lines.push(display.source2);
     }
     if (subtitleMode === 'target' || subtitleMode === 'both') {
-      if (sub.trans1) lines.push(sub.trans1);
-      if (sub.trans2) lines.push(sub.trans2);
+      if (display.trans1) lines.push(display.trans1);
+      if (display.trans2) lines.push(display.trans2);
     }
 
     if (lines.length > 0) {
@@ -709,37 +1104,400 @@
     }
   }
 
+  // ============ SIDEBAR ============
   function buildSidebar() {
     subtitleSidebar.innerHTML = '';
 
     subtitles.forEach((sub, i) => {
+      const isEditing = editingIndex === i;
       const row = document.createElement('div');
       row.className = 'sub-row';
       if (sub.flagged) row.classList.add('flagged');
       if (sub.approved) row.classList.add('approved');
+      if (isEditing) row.classList.add('editing');
       row.dataset.index = i;
 
-      const text = document.createElement('span');
-      text.className = 'sub-text';
-      const line1 = subtitleMode === 'both' ? sub.trans1 : (subtitleMode === 'target' ? sub.trans1 : sub.source1);
-      const line2 = subtitleMode === 'both' ? sub.trans2 : (subtitleMode === 'target' ? sub.trans2 : sub.source2);
-      text.textContent = [line1, line2].filter(Boolean).join(' ');
-
-      const time = document.createElement('span');
-      time.className = 'sub-time';
-      time.textContent = formatTime(sub.start);
-
-      row.appendChild(text);
-      row.appendChild(time);
-
-      row.addEventListener('click', () => {
-        video.currentTime = sub.start;
-      });
+      if (isEditing) {
+        renderEditRow(row, sub, i);
+      } else {
+        renderDisplayRow(row, sub, i);
+      }
 
       subtitleSidebar.appendChild(row);
     });
 
     updateSidebarHighlight();
+  }
+
+  function renderDisplayRow(row, sub, i) {
+    const tools = document.createElement('div');
+    tools.className = 'sub-row-tools';
+
+    let insertBtn = null;
+
+    if (authToken) {
+      tools.appendChild(makeStatusBtn(sub, i));
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'sub-edit-btn';
+      editBtn.textContent = '✎';
+      editBtn.title = 'Edit';
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editingIndex = i;
+        editValues = {
+          start: sub.start, end: sub.end,
+          source1: sub.source1, source2: sub.source2,
+          trans1: sub.trans1, trans2: sub.trans2,
+        };
+        buildSidebar();
+        const first = subtitleSidebar.querySelector('.sub-edit-input');
+        if (first) first.focus();
+      });
+      tools.appendChild(editBtn);
+
+      insertBtn = document.createElement('button');
+      insertBtn.className = 'sub-insert-btn';
+      insertBtn.textContent = '+';
+      insertBtn.title = 'Insert subtitle';
+      insertBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const existing = insertBtn.querySelector('.sub-insert-menu');
+        if (existing) { existing.remove(); return; }
+        const menu = document.createElement('div');
+        menu.className = 'sub-insert-menu';
+
+        const beforeBtn = document.createElement('button');
+        beforeBtn.textContent = 'Add subtitle before';
+        beforeBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          menu.remove();
+          try { await insertSubtitle(i - 1); }
+          catch (err) { console.error('Insert failed:', err); }
+        });
+
+        const afterBtn = document.createElement('button');
+        afterBtn.textContent = 'Add subtitle after';
+        afterBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          menu.remove();
+          try { await insertSubtitle(i); }
+          catch (err) { console.error('Insert failed:', err); }
+        });
+
+        menu.appendChild(beforeBtn);
+        menu.appendChild(afterBtn);
+        insertBtn.appendChild(menu);
+
+        const close = (ev) => { if (!insertBtn.contains(ev.target)) { menu.remove(); document.removeEventListener('click', close, true); } };
+        setTimeout(() => document.addEventListener('click', close, true), 0);
+      });
+    }
+
+    row.appendChild(tools);
+
+    const text = document.createElement('span');
+    text.className = 'sub-text';
+    const line1 = subtitleMode === 'both' ? sub.trans1 : (subtitleMode === 'target' ? sub.trans1 : sub.source1);
+    const line2 = subtitleMode === 'both' ? sub.trans2 : (subtitleMode === 'target' ? sub.trans2 : sub.source2);
+    text.textContent = [line1, line2].filter(Boolean).join(' ');
+    row.appendChild(text);
+
+    const time = document.createElement('span');
+    time.className = 'sub-time';
+    time.textContent = formatTime(sub.start);
+    row.appendChild(time);
+
+    if (insertBtn) row.appendChild(insertBtn);
+
+    row.addEventListener('click', () => { video.currentTime = sub.start; });
+  }
+
+  function makeStatusBtn(sub, i) {
+    const status = sub.flagged ? 'flagged' : (sub.approved ? 'approved' : 'empty');
+    const ICONS  = { empty: '○', flagged: '⚑', approved: '✓' };
+    const NEXT   = { empty: 'flagged', flagged: 'approved', approved: 'empty' };
+
+    const btn = document.createElement('button');
+    btn.className = 'sub-status-btn sub-status-' + status;
+    btn.textContent = ICONS[status];
+    btn.title = status.charAt(0).toUpperCase() + status.slice(1);
+
+    if (authToken) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const next = NEXT[status];
+        const prevApproved = sub.approved;
+        const prevFlagged  = sub.flagged;
+
+        // Optimistic update — reflect immediately.
+        sub.approved = next === 'approved';
+        sub.flagged  = next === 'flagged';
+        buildSidebar();
+
+        // Debounce the write so rapid cycling only fires one request.
+        clearTimeout(statusDebounceTimers[i]);
+        statusDebounceTimers[i] = setTimeout(async () => {
+          try {
+            await saveSubtitleStatus(i, sub.approved, sub.flagged);
+          } catch (err) {
+            // Revert the optimistic update on failure.
+            sub.approved = prevApproved;
+            sub.flagged  = prevFlagged;
+            buildSidebar();
+            console.error('Failed to save status:', err);
+          }
+        }, 600);
+      });
+    }
+
+    return btn;
+  }
+
+  function renderEditRow(row, sub, i) {
+    const showSource = subtitleMode === 'source' || subtitleMode === 'both';
+    const showTarget = subtitleMode === 'target' || subtitleMode === 'both';
+
+    const fields = document.createElement('div');
+    fields.className = 'sub-edit-fields';
+
+    if (showSource) {
+      fields.appendChild(makeEditInputRow('source1', editValues.source1, 'Source'));
+      fields.appendChild(makeEditInputRow('source2', editValues.source2, 'Source 2'));
+    }
+
+    if (showTarget) {
+      fields.appendChild(makeEditInputRow('trans1', editValues.trans1, 'Translation'));
+      fields.appendChild(makeEditInputRow('trans2', editValues.trans2, 'Translation 2'));
+    }
+
+    const timingDetails = document.createElement('details');
+    timingDetails.className = 'sub-timing-details';
+    const timingSummary = document.createElement('summary');
+    timingSummary.textContent = 'Timings';
+    timingDetails.appendChild(timingSummary);
+    const timingFields = document.createElement('div');
+    timingFields.className = 'sub-timing-fields';
+    timingFields.appendChild(makeTimingInputRow('start', editValues.start, 'Start', i));
+    timingFields.appendChild(makeTimingInputRow('end', editValues.end, 'End', i));
+    timingDetails.appendChild(timingFields);
+    fields.appendChild(timingDetails);
+
+    row.appendChild(fields);
+
+    // Actions bar: Save, Cancel, timestamp
+    const actions = document.createElement('div');
+    actions.className = 'sub-edit-actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'sub-save-btn';
+    saveBtn.textContent = 'Save';
+    saveBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      const errEl = actions.querySelector('.sub-edit-error');
+      if (errEl) errEl.remove();
+      try {
+        await saveSubtitle(i);
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+        const span = document.createElement('span');
+        span.className = 'sub-edit-error';
+        span.textContent = err.message;
+        actions.appendChild(span);
+      }
+    });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'sub-cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingIndex = null;
+      editValues = null;
+      buildSidebar();
+      updateSubtitleOverlay();
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'sub-delete-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await deleteSubtitle(i);
+      } catch (err) {
+        const errEl = actions.querySelector('.sub-edit-error');
+        if (errEl) errEl.remove();
+        const span = document.createElement('span');
+        span.className = 'sub-edit-error';
+        span.textContent = err.message;
+        actions.appendChild(span);
+      }
+    });
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'sub-edit-time';
+    timeSpan.textContent = formatTime(sub.start);
+    timeSpan.title = 'Seek to this subtitle';
+    timeSpan.addEventListener('click', (e) => {
+      e.stopPropagation();
+      video.currentTime = sub.start;
+    });
+
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+    actions.appendChild(deleteBtn);
+    actions.appendChild(timeSpan);
+    row.appendChild(actions);
+  }
+
+  function makeEditInputRow(field, value, placeholder) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sub-edit-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'sub-edit-input';
+    input.value = value || '';
+    input.placeholder = placeholder;
+    input.dataset.field = field;
+    input.addEventListener('input', () => { editValues[field] = input.value; updateSubtitleOverlay(); });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        editingIndex = null;
+        editValues = null;
+        buildSidebar();
+      }
+    });
+
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+
+  function makeTimingInputRow(field, valueSec, label, index) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sub-edit-row';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'sub-timing-label';
+    lbl.textContent = label;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'sub-edit-input sub-timing-input';
+    input.value = formatSRTTime(valueSec);
+    input.placeholder = '00:00:00,000';
+    input.dataset.field = field;
+
+    function syncValidity() {
+      const editRow = input.closest('.sub-row.editing');
+      if (!editRow) return;
+      const anyInvalid = editRow.querySelectorAll('.sub-timing-input.invalid').length > 0;
+      const saveBtn = editRow.querySelector('.sub-save-btn');
+      if (saveBtn) saveBtn.disabled = anyInvalid;
+    }
+
+    function applyValue(val) {
+      const rounded = Math.round(Math.max(0, val) * 1000) / 1000;
+      editValues[field] = rounded;
+      input.value = formatSRTTime(rounded);
+      input.classList.remove('invalid');
+      syncValidity();
+      // If end < start after the change, pull the other field to match.
+      if (field === 'start' && editValues.end < editValues.start) {
+        editValues.end = editValues.start;
+        setTimingInput('end', editValues.start);
+      } else if (field === 'end' && editValues.start > editValues.end) {
+        editValues.start = editValues.end;
+        setTimingInput('start', editValues.end);
+      }
+    }
+
+    input.addEventListener('input', () => {
+      const parsed = parseSRTTime(input.value);
+      input.classList.toggle('invalid', isNaN(parsed));
+      if (!isNaN(parsed)) editValues[field] = parsed;
+      syncValidity();
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { editingIndex = null; editValues = null; buildSidebar(); updateSubtitleOverlay(); }
+    });
+
+    const decBtn = document.createElement('button');
+    decBtn.className = 'sub-timing-step-btn';
+    decBtn.textContent = '−';
+    decBtn.title = '−100ms';
+    decBtn.addEventListener('click', (e) => { e.stopPropagation(); applyValue(editValues[field] - 0.1); });
+
+    const incBtn = document.createElement('button');
+    incBtn.className = 'sub-timing-step-btn';
+    incBtn.textContent = '+';
+    incBtn.title = '+100ms';
+    incBtn.addEventListener('click', (e) => { e.stopPropagation(); applyValue(editValues[field] + 0.1); });
+
+    const nowBtn = document.createElement('button');
+    nowBtn.className = 'sub-now-btn';
+    nowBtn.textContent = 'Now';
+    nowBtn.title = 'Set to current playback time';
+    nowBtn.dataset.nowField = field;
+    nowBtn.dataset.nowIndex = index;
+    nowBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!nowBtn.disabled) applyValue(video.currentTime);
+    });
+
+    wrap.appendChild(lbl);
+    wrap.appendChild(decBtn);
+    wrap.appendChild(input);
+    wrap.appendChild(incBtn);
+    wrap.appendChild(nowBtn);
+    return wrap;
+  }
+
+  function setTimingInput(field, value) {
+    const input = subtitleSidebar.querySelector(`.sub-timing-input[data-field="${field}"]`);
+    if (!input) return;
+    input.value = formatSRTTime(value);
+    input.classList.remove('invalid');
+  }
+
+  function isNowAllowed(index) {
+    const t = video.currentTime;
+    const prevEnd   = index > 0                    ? subtitles[index - 1].end   : -Infinity;
+    const nextStart = index < subtitles.length - 1 ? subtitles[index + 1].start :  Infinity;
+    return t > prevEnd && t < nextStart;
+  }
+
+  function updateNowButtons() {
+    if (editingIndex === null) return;
+    const allowed = isNowAllowed(editingIndex);
+    subtitleSidebar.querySelectorAll('.sub-now-btn').forEach(btn => {
+      btn.disabled = !allowed;
+    });
+  }
+
+  function formatSRTTime(totalSec) {
+    const h  = Math.floor(totalSec / 3600);
+    const m  = Math.floor((totalSec % 3600) / 60);
+    const s  = Math.floor(totalSec % 60);
+    const ms = Math.round((totalSec % 1) * 1000);
+    return String(h).padStart(2, '0') + ':' +
+           String(m).padStart(2, '0') + ':' +
+           String(s).padStart(2, '0') + ',' +
+           String(ms).padStart(3, '0');
+  }
+
+  function parseSRTTime(str) {
+    const match = str.trim().match(/^(\d+):(\d{2}):(\d{2})[,.](\d{3})$/);
+    if (!match) return NaN;
+    const [, h, m, s, ms] = match.map(Number);
+    return h * 3600 + m * 60 + s + ms / 1000;
   }
 
   function formatTime(totalSec) {
@@ -767,11 +1525,312 @@
       found.classList.add('active');
       found.scrollIntoView({ block: 'nearest' });
     }
+    updateNowButtons();
   }
+
+  // ============ SHEETS API ============
+  async function fetchSheetName(spreadsheetId, gid) {
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+      { headers: { Authorization: `Bearer ${authToken}` } }
+    );
+    if (!resp.ok) throw new Error('Could not fetch spreadsheet metadata (HTTP ' + resp.status + ')');
+    const data = await resp.json();
+    const sheet = data.sheets.find(s => s.properties.sheetId === parseInt(gid, 10));
+    return sheet ? sheet.properties.title : null;
+  }
+
+  async function getSheetName(spreadsheetId, gid) {
+    const key = spreadsheetId + ':' + gid;
+    if (!sheetNameCache[key]) {
+      sheetNameCache[key] = await fetchSheetName(spreadsheetId, gid);
+    }
+    return sheetNameCache[key];
+  }
+
+  async function saveSubtitle(index) {
+    const episode = EPISODES[currentEpisode];
+    const { spreadsheetId, gid } = parseSpreadsheetUrl(episode.csvUrl);
+    const sheetName = await getSheetName(spreadsheetId, gid);
+    if (!sheetName) throw new Error('Could not determine sheet tab name');
+
+    const sub = subtitles[index];
+    const rowNum = index + 2; // row 1 is header, subtitles start at row 2
+
+    const editSource = subtitleMode === 'source' || subtitleMode === 'both';
+    const editTarget = subtitleMode === 'target' || subtitleMode === 'both';
+
+    // Always write C:H so timings are included regardless of subtitle mode.
+    const range = `${sheetName}!C${rowNum}:H${rowNum}`;
+    const values = [[
+      formatSRTTime(editValues.start),
+      formatSRTTime(editValues.end),
+      editSource ? (editValues.source1 || '') : sub.source1,
+      editSource ? (editValues.source2 || '') : sub.source2,
+      editTarget ? (editValues.trans1 || '') : sub.trans1,
+      editTarget ? (editValues.trans2 || '') : sub.trans2,
+    ]];
+
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ range, majorDimension: 'ROWS', values }),
+      }
+    );
+
+    if (resp.status === 401) {
+      clearStoredToken();
+      authToken = null;
+      tokenClient.requestAccessToken();
+      throw new Error('Session expired — re-authenticating');
+    }
+    if (resp.status === 403) {
+      throw new Error("You don't have edit access to this spreadsheet");
+    }
+    if (!resp.ok) {
+      throw new Error('Save failed (HTTP ' + resp.status + ')');
+    }
+
+    // Commit edits to local subtitle object
+    sub.start = editValues.start;
+    sub.end   = editValues.end;
+    if (editSource) {
+      sub.source1 = editValues.source1 || '';
+      sub.source2 = editValues.source2 || '';
+    }
+    if (editTarget) {
+      sub.trans1 = editValues.trans1 || '';
+      sub.trans2 = editValues.trans2 || '';
+    }
+
+    editingIndex = null;
+    editValues = null;
+    buildSidebar();
+    updateSubtitleOverlay();
+  }
+
+  async function deleteSubtitle(index) {
+    if (!confirm('Delete this subtitle entry? This cannot be undone.')) return;
+
+    const episode = EPISODES[currentEpisode];
+    const { spreadsheetId, gid } = parseSpreadsheetUrl(episode.csvUrl);
+    const rowIndex = index + 1; // 0-based; row 0 is the header
+
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requests: [{
+            deleteDimension: {
+              range: {
+                sheetId: parseInt(gid, 10),
+                dimension: 'ROWS',
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          }],
+        }),
+      }
+    );
+
+    if (resp.status === 401) {
+      clearStoredToken();
+      authToken = null;
+      tokenClient.requestAccessToken();
+      throw new Error('Session expired — re-authenticating');
+    }
+    if (resp.status === 403) throw new Error("You don't have edit access to this spreadsheet");
+    if (!resp.ok) throw new Error('Delete failed (HTTP ' + resp.status + ')');
+
+    subtitles.splice(index, 1);
+    editingIndex = null;
+    editValues = null;
+    buildSidebar();
+    updateSubtitleOverlay();
+  }
+
+  async function insertSubtitle(afterIndex) {
+    const episode = EPISODES[currentEpisode];
+    const { spreadsheetId, gid } = parseSpreadsheetUrl(episode.csvUrl);
+    const sheetName = await getSheetName(spreadsheetId, gid);
+    if (!sheetName) throw new Error('Could not determine sheet tab name');
+
+    const prev = subtitles[afterIndex];
+    const next = subtitles[afterIndex + 1];
+    const newStart = prev ? prev.end : 0;
+    const newEnd   = next ? next.start : (prev ? prev.end : 0);
+
+    // Sheet row for the new entry: afterIndex + 2 inserts after afterIndex's row (1-based, +1 for header).
+    // When afterIndex === -1 (insert before first row), startIndex = 1 (right after header).
+    const sheetStartIndex = afterIndex + 2;
+    const batchResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            insertDimension: {
+              range: {
+                sheetId: parseInt(gid, 10),
+                dimension: 'ROWS',
+                startIndex: sheetStartIndex,
+                endIndex: sheetStartIndex + 1,
+              },
+              inheritFromBefore: false,
+            },
+          }],
+        }),
+      }
+    );
+
+    if (batchResp.status === 401) { clearStoredToken(); authToken = null; tokenClient.requestAccessToken(); throw new Error('Session expired'); }
+    if (batchResp.status === 403) throw new Error("You don't have edit access to this spreadsheet");
+    if (!batchResp.ok) throw new Error('Insert failed (HTTP ' + batchResp.status + ')');
+
+    // Write timestamps into the new row (columns A:H). Row number is 1-based = sheetStartIndex + 1.
+    const newRowNum = sheetStartIndex + 1;
+    const range = `${sheetName}!A${newRowNum}:H${newRowNum}`;
+    const writeResp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ range, majorDimension: 'ROWS', values: [[false, false, formatSRTTime(newStart), formatSRTTime(newEnd), '', '', '', '']] }),
+      }
+    );
+
+    if (!writeResp.ok) throw new Error('Write failed (HTTP ' + writeResp.status + ')');
+
+    const newSub = { start: newStart, end: newEnd, source1: '', source2: '', trans1: '', trans2: '', approved: false, flagged: false };
+    subtitles.splice(afterIndex + 1, 0, newSub);
+
+    editingIndex = afterIndex + 1;
+    editValues = { start: newStart, end: newEnd, source1: '', source2: '', trans1: '', trans2: '' };
+
+    buildSidebar();
+    subtitleSidebar.querySelector(`[data-index="${afterIndex + 1}"]`)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function saveSubtitleStatus(index, approved, flagged) {
+    const episode = EPISODES[currentEpisode];
+    const { spreadsheetId, gid } = parseSpreadsheetUrl(episode.csvUrl);
+    const sheetName = await getSheetName(spreadsheetId, gid);
+    if (!sheetName) throw new Error('Could not determine sheet tab name');
+
+    const rowNum = index + 2;
+    const range = `${sheetName}!A${rowNum}:B${rowNum}`;
+    const values = [[approved, flagged]];
+
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ range, majorDimension: 'ROWS', values }),
+      }
+    );
+
+    if (resp.status === 401) {
+      clearStoredToken();
+      authToken = null;
+      tokenClient.requestAccessToken();
+      throw new Error('Session expired — re-authenticating');
+    }
+    if (resp.status === 403) throw new Error("You don't have edit access to this spreadsheet");
+    if (!resp.ok) throw new Error('Status save failed (HTTP ' + resp.status + ')');
+  }
+
+  // ============ AUTH ============
+  const TOKEN_KEY        = 'sub_preview_token';
+  const TOKEN_EXPIRY_KEY = 'sub_preview_token_expiry';
+
+  function saveToken(token, expiresIn) {
+    // Subtract 60 s so we never use a token that's about to expire.
+    const expiry = Date.now() + (expiresIn * 1000) - 60000;
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(TOKEN_EXPIRY_KEY, String(expiry));
+  }
+
+  function loadToken() {
+    const token  = localStorage.getItem(TOKEN_KEY);
+    const expiry = parseInt(localStorage.getItem(TOKEN_EXPIRY_KEY) || '0', 10);
+    if (token && Date.now() < expiry) return token;
+    clearStoredToken();
+    return null;
+  }
+
+  function clearStoredToken() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+  }
+
+  function handleSignedIn(token) {
+    authToken = token;
+    signInBtn.style.display = 'none';
+    authUserDisplay.style.display = '';
+    authUserDisplay.textContent = 'Signed in';
+    signOutBtn.style.display = '';
+    subtitleSidebar.classList.add('edit-enabled');
+    buildSidebar();
+  }
+
+  function onGISLoad() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      callback: (resp) => {
+        if (resp.error) return;
+        saveToken(resp.access_token, resp.expires_in);
+        handleSignedIn(resp.access_token);
+      },
+    });
+
+    // Restore session from storage — no popup needed.
+    const saved = loadToken();
+    if (saved) handleSignedIn(saved);
+  }
+
+  signInBtn.addEventListener('click', () => {
+    if (tokenClient) {
+      tokenClient.requestAccessToken();
+    } else {
+      alert('Google sign-in is still loading. Please try again in a moment.');
+    }
+  });
+
+  signOutBtn.addEventListener('click', () => {
+    if (authToken) google.accounts.oauth2.revoke(authToken, () => {});
+    clearStoredToken();
+    authToken = null;
+    editingIndex = null;
+    editValues = null;
+    signInBtn.style.display = '';
+    authUserDisplay.style.display = 'none';
+    signOutBtn.style.display = 'none';
+    subtitleSidebar.classList.remove('edit-enabled');
+    buildSidebar();
+  });
 
   // ============ TOGGLE ============
   function setToggle(mode) {
     subtitleMode = mode;
+    editingIndex = null;
+    editValues = null;
     toggleSourceBtn.classList.toggle('active', mode === 'source');
     toggleTargetBtn.classList.toggle('active', mode === 'target');
     toggleBothBtn.classList.toggle('active', mode === 'both');
@@ -1048,6 +2107,7 @@
   video.addEventListener('timeupdate', () => {
     updateSubtitleOverlay();
     updateSidebarHighlight();
+    updateNowButtons();
   });
 
   video.addEventListener('error', () => {
