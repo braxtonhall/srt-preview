@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Player</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: #0a0a0a;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .top-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 10px 20px;
+    background: #111;
+    border-bottom: 1px solid #222;
+    z-index: 10;
+  }
+
+  .top-bar label {
+    font-size: 0.85rem;
+    color: #888;
+  }
+
+  .top-bar select {
+    background: #1e1e1e;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .top-bar select:focus {
+    outline: none;
+    border-color: #666;
+  }
+
+  .toggle-group {
+    display: flex;
+    border: 1px solid #444;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .toggle-group button {
+    background: #1e1e1e;
+    color: #888;
+    border: none;
+    padding: 6px 16px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .toggle-group button:not(:last-child) {
+    border-right: 1px solid #444;
+  }
+
+  .toggle-group button.active {
+    background: #3a6ea5;
+    color: #fff;
+  }
+
+  .toggle-group button:hover:not(.active) {
+    background: #2a2a2a;
+    color: #ccc;
+  }
+
+  .refresh-btn {
+    background: #1e1e1e;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .refresh-btn:hover {
+    background: #333;
+  }
+
+  .refresh-btn.spinning .refresh-icon {
+    animation: spin 0.6s linear infinite;
+  }
+
+  .refresh-icon {
+    display: inline-block;
+  }
+
+  .main-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 0;
+  }
+
+  .password-prompt {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .password-prompt h2 {
+    font-size: 1.4rem;
+    font-weight: 500;
+    color: #ccc;
+  }
+
+  .password-prompt input {
+    background: #1e1e1e;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 1rem;
+    width: 260px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .password-prompt input:focus {
+    border-color: #666;
+  }
+
+  .password-prompt button {
+    background: #3a6ea5;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 28px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .password-prompt button:hover {
+    background: #4a7eb5;
+  }
+
+  .password-prompt button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .password-error {
+    color: #e06060;
+    font-size: 0.85rem;
+    min-height: 20px;
+    text-align: center;
+    max-width: 320px;
+  }
+
+  .loading-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #333;
+    border-top-color: #4a90d9;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); display: inline-block; }
+    to { transform: rotate(360deg); display: inline-block; }
+  }
+
+  .progress-bar-container {
+    width: 340px;
+    max-width: 80vw;
+    height: 6px;
+    background: #222;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #4a90d9;
+    border-radius: 3px;
+    transition: width 0.15s;
+  }
+
+  .progress-text {
+    color: #777;
+    font-size: 0.85rem;
+  }
+
+  .video-wrapper {
+    display: none;
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+  }
+
+  .subtitle-overlay {
+    position: absolute;
+    bottom: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 90%;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 1.4rem;
+    line-height: 1.6;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .subtitle-overlay .line {
+    display: block;
+  }
+
+  .subtitle-overlay.no-subs {
+    background: rgba(60, 60, 60, 0.7);
+    color: #999;
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+
+  .skip-bar {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  .skip-bar button {
+    background: #1e1e1e;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .skip-bar button:hover {
+    background: #2e2e2e;
+    border-color: #666;
+  }
+
+  .skip-bar button:active {
+    transform: scale(0.95);
+    background: #3e3e3e;
+  }
+
+  .skip-bar button.primary {
+    border-color: #888;
+    color: #fff;
+    font-weight: 600;
+    font-size: 1.25rem;
+    padding: 14px 24px;
+  }
+
+  .skip-bar button.primary:hover {
+    border-color: #aaa;
+    background: #333;
+  }
+
+  .skip-bar button .key {
+    font-size: 0.7rem;
+    color: #888;
+    margin-left: 4px;
+  }
+
+  .load-error {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+  }
+
+  .load-error p {
+    color: #e06060;
+    font-size: 0.95rem;
+    max-width: 400px;
+  }
+
+  .load-error button {
+    background: #1e1e1e;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .load-error button:hover {
+    background: #333;
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar" id="topBar">
+  <label for="episodeSelect">Episode</label>
+  <select id="episodeSelect"></select>
+  <div class="toggle-group" id="toggleGroup">
+    <button id="toggleSource" class="active">Source</button>
+    <button id="toggleTarget">Target</button>
+  </div>
+  <button class="refresh-btn" id="refreshBtn" title="Refresh subtitles from spreadsheet">
+    <span class="refresh-icon">&#x21bb;</span> Refresh
+  </button>
+  <span id="subtitleStatus" style="font-size:0.8rem;color:#666;"></span>
+</div>
+
+<div class="main-area" id="mainArea">
+  <div class="password-prompt" id="passwordPrompt">
+    <h2>Enter password to unlock</h2>
+    <input type="password" id="passwordInput" placeholder="Password" autocomplete="off">
+    <button id="unlockBtn">Unlock</button>
+    <p class="password-error" id="passwordError"></p>
+  </div>
+
+  <div class="loading-screen" id="loadingScreen">
+    <div class="spinner"></div>
+    <div class="progress-bar-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <p class="progress-text" id="progressText">Downloading...</p>
+  </div>
+
+  <div class="video-wrapper" id="videoWrapper">
+    <video id="video" controls crossorigin="anonymous"></video>
+    <div class="subtitle-overlay" id="subtitleOverlay"></div>
+  </div>
+
+  <div class="load-error" id="loadError">
+    <p id="loadErrorText"></p>
+    <button id="retryBtn">Try Again</button>
+  </div>
+</div>
+
+<div class="skip-bar" id="skipBar">
+  <button class="primary" data-skip="-5" title="Skip back 5 seconds">
+    -5s <span class="key">&#8592;</span>
+  </button>
+  <button data-skip="-1" title="Skip back 1 second">
+    -1s <span class="key">Shift &#8592;</span>
+  </button>
+  <button data-skip="1" title="Skip forward 1 second">
+    +1s <span class="key">Shift &#8594;</span>
+  </button>
+  <button class="primary" data-skip="5" title="Skip forward 5 seconds">
+    +5s <span class="key">&#8594;</span>
+  </button>
+</div>
+
+<script>
+  // ============ EPISODE CONFIG ============
+  const EPISODES = [
+    {
+      name: "Episode 1",
+      csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=142222312",
+      videoUrl: "assets/1.enc",
+      verifySalt: "c91064aa3d38a1ac2d676f6b9d336e3b",
+      verifyHash: "6c554e4e94cf59f27b4c2996e1abae36c538ae41656bf2c4252d9e9adfff0e0d",
+    },
+  ];
+
+  // ============ STATE ============
+  let subtitles = [];
+  let showSource = true;
+  let subtitleLoading = false;
+  let currentEpisode = 0;
+  let cachedPassword = null;
+  let objectUrl = null;
+
+  const PASSWORD_STORAGE_KEY = 'sub_preview_password';
+  const PBKDF2_ITERATIONS = 100000;
+  const KEY_BITS = 256;
+  const SALT_BYTES = 16;
+  const IV_BYTES = 12;
+
+  // ============ DOM REFS ============
+  const episodeSelect = document.getElementById('episodeSelect');
+  const toggleSourceBtn = document.getElementById('toggleSource');
+  const toggleTargetBtn = document.getElementById('toggleTarget');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const subtitleStatus = document.getElementById('subtitleStatus');
+  const mainArea = document.getElementById('mainArea');
+  const passwordPrompt = document.getElementById('passwordPrompt');
+  const passwordInput = document.getElementById('passwordInput');
+  const unlockBtn = document.getElementById('unlockBtn');
+  const passwordError = document.getElementById('passwordError');
+  const loadingScreen = document.getElementById('loadingScreen');
+  const progressBar = document.getElementById('progressBar');
+  const progressText = document.getElementById('progressText');
+  const videoWrapper = document.getElementById('videoWrapper');
+  const video = document.getElementById('video');
+  const subtitleOverlay = document.getElementById('subtitleOverlay');
+  const skipBar = document.getElementById('skipBar');
+  const loadError = document.getElementById('loadError');
+  const loadErrorText = document.getElementById('loadErrorText');
+  const retryBtn = document.getElementById('retryBtn');
+
+  // ============ EPISODE DROPDOWN ============
+  EPISODES.forEach((ep, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = ep.name;
+    episodeSelect.appendChild(opt);
+  });
+
+  // ============ UTILS ============
+  function hexToBytes(hex) {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes[i / 2] = (parseInt(hex.substring(i, i + 2), 16));
+    }
+    return bytes;
+  }
+
+  function bytesEqual(a, b) {
+    if (a.byteLength !== b.byteLength) return false;
+    const aa = new Uint8Array(a);
+    const bb = new Uint8Array(b);
+    for (let i = 0; i < aa.length; i++) {
+      if (aa[i] !== bb[i]) return false;
+    }
+    return true;
+  }
+
+  // ============ CSV PARSING ============
+  function parseCSV(text) {
+    const rows = [];
+    const lines = text.split('\n');
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const fields = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (i + 1 < line.length && line[i + 1] === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            current += ch;
+          }
+        } else {
+          if (ch === '"') {
+            inQuotes = true;
+          } else if (ch === ',') {
+            fields.push(current);
+            current = '';
+          } else {
+            current += ch;
+          }
+        }
+      }
+      fields.push(current);
+      rows.push(fields);
+    }
+
+    return rows;
+  }
+
+  function parseTimestamp(ts) {
+    const parts = ts.split(':');
+    const hours = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    const secMs = parts[2].split(',');
+    const seconds = parseInt(secMs[0], 10);
+    const ms = parseInt(secMs[1], 10);
+    return hours * 3600 + minutes * 60 + seconds + ms / 1000;
+  }
+
+  // ============ SUBTITLE FETCHING ============
+  async function fetchSubtitles(url) {
+    if (subtitleLoading) return;
+    subtitleLoading = true;
+    refreshBtn.classList.add('spinning');
+    subtitleStatus.textContent = 'Loading\u2026';
+    subtitleStatus.style.color = '#888';
+
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const text = await resp.text();
+      const rows = parseCSV(text);
+
+      if (rows.length < 2) {
+        subtitles = [];
+        subtitleStatus.textContent = 'No subtitles found';
+        subtitleStatus.style.color = '#e06060';
+        return;
+      }
+
+      subtitles = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.length < 4) continue;
+        subtitles.push({
+          start: parseTimestamp(row[2]),
+          end: parseTimestamp(row[3]),
+          source1: (row[4] || '').trim(),
+          source2: (row[5] || '').trim(),
+          trans1: (row[6] || '').trim(),
+          trans2: (row[7] || '').trim(),
+        });
+      }
+
+      subtitleStatus.textContent = subtitles.length + ' subtitles loaded';
+      subtitleStatus.style.color = '#4a8';
+      updateSubtitleOverlay();
+    } catch (err) {
+      console.error('Failed to fetch subtitles:', err);
+      subtitleStatus.textContent = 'Failed to load';
+      subtitleStatus.style.color = '#e06060';
+      subtitles = [];
+    } finally {
+      subtitleLoading = false;
+      refreshBtn.classList.remove('spinning');
+    }
+  }
+
+  function findSubtitle(time) {
+    let lo = 0;
+    let hi = subtitles.length - 1;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const sub = subtitles[mid];
+      if (time >= sub.start && time <= sub.end) return sub;
+      if (time < sub.start) hi = mid - 1;
+      else lo = mid + 1;
+    }
+    return null;
+  }
+
+  function updateSubtitleOverlay() {
+    if (!video.src || subtitles.length === 0) {
+      subtitleOverlay.style.display = 'none';
+      return;
+    }
+
+    const sub = findSubtitle(video.currentTime);
+
+    if (!sub) {
+      subtitleOverlay.style.display = 'block';
+      subtitleOverlay.classList.add('no-subs');
+      subtitleOverlay.innerHTML = '';
+      const span = document.createElement('span');
+      span.className = 'line';
+      span.textContent = '(no subtitle)';
+      subtitleOverlay.appendChild(span);
+      return;
+    }
+
+    subtitleOverlay.classList.remove('no-subs');
+    subtitleOverlay.innerHTML = '';
+
+    const line1 = showSource ? sub.source1 : sub.trans1;
+    const line2 = showSource ? sub.source2 : sub.trans2;
+
+    if (line1 || line2) {
+      subtitleOverlay.style.display = 'block';
+      if (line1) {
+        const l1 = document.createElement('span');
+        l1.className = 'line';
+        l1.textContent = line1;
+        subtitleOverlay.appendChild(l1);
+      }
+      if (line2) {
+        const l2 = document.createElement('span');
+        l2.className = 'line';
+        l2.textContent = line2;
+        subtitleOverlay.appendChild(l2);
+      }
+    } else {
+      subtitleOverlay.style.display = 'none';
+    }
+  }
+
+  // ============ TOGGLE ============
+  function setToggle(state) {
+    showSource = state;
+    toggleSourceBtn.classList.toggle('active', state);
+    toggleTargetBtn.classList.toggle('active', !state);
+    updateSubtitleOverlay();
+  }
+
+  toggleSourceBtn.addEventListener('click', () => setToggle(true));
+  toggleTargetBtn.addEventListener('click', () => setToggle(false));
+
+  // ============ REFRESH ============
+  refreshBtn.addEventListener('click', () => {
+    fetchSubtitles(EPISODES[currentEpisode].csvUrl);
+  });
+
+  // ============ CRYPTO ============
+  async function verifyPassword(password, saltHex, hashHex) {
+    const salt = hexToBytes(saltHex);
+    const expectedHash = hexToBytes(hashHex);
+
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const derivedBits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+      keyMaterial,
+      KEY_BITS
+    );
+
+    return bytesEqual(new Uint8Array(derivedBits), expectedHash);
+  }
+
+  async function downloadAndDecrypt(videoUrl, password, onProgress) {
+    const url = new URL(videoUrl, window.location.href).href;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to download video (HTTP ' + response.status + ')');
+
+    const contentLength = +response.headers.get('Content-Length') || 0;
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (onProgress && contentLength > 0) {
+        onProgress(received, contentLength);
+      }
+    }
+
+    const buffer = new Uint8Array(received);
+    let pos = 0;
+    for (const chunk of chunks) {
+      buffer.set(chunk, pos);
+      pos += chunk.length;
+    }
+
+    const salt = buffer.slice(0, SALT_BYTES);
+    const iv = buffer.slice(SALT_BYTES, SALT_BYTES + IV_BYTES);
+    const data = buffer.slice(SALT_BYTES + IV_BYTES);
+
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const derivedBits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+      keyMaterial,
+      KEY_BITS
+    );
+    const aesKey = await crypto.subtle.importKey('raw', derivedBits, 'AES-GCM', false, ['decrypt']);
+
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, tagLength: 128 },
+      aesKey,
+      data
+    );
+
+    return decrypted;
+  }
+
+  // ============ UI STATE ============
+  function showPasswordPrompt() {
+    passwordPrompt.style.display = 'flex';
+    loadingScreen.style.display = 'none';
+    videoWrapper.style.display = 'none';
+    skipBar.style.display = 'none';
+    loadError.style.display = 'none';
+    passwordError.textContent = '';
+    unlockBtn.disabled = false;
+    unlockBtn.textContent = 'Unlock';
+    passwordInput.focus();
+  }
+
+  function showLoading() {
+    passwordPrompt.style.display = 'none';
+    loadingScreen.style.display = 'flex';
+    videoWrapper.style.display = 'none';
+    skipBar.style.display = 'none';
+    loadError.style.display = 'none';
+    progressBar.style.width = '0%';
+    progressText.textContent = 'Downloading...';
+  }
+
+  function showError(message) {
+    passwordPrompt.style.display = 'none';
+    loadingScreen.style.display = 'none';
+    videoWrapper.style.display = 'none';
+    skipBar.style.display = 'none';
+    loadError.style.display = 'flex';
+    loadErrorText.textContent = message;
+  }
+
+  // ============ VIDEO LOADING ============
+  async function loadVideo() {
+    const episode = EPISODES[currentEpisode];
+
+    try {
+      const decrypted = await downloadAndDecrypt(episode.videoUrl, cachedPassword, (received, total) => {
+        const pct = Math.round((received / total) * 100);
+        progressBar.style.width = pct + '%';
+        progressText.textContent = 'Downloading... ' + pct + '% (' + formatSize(received) + ' / ' + formatSize(total) + ')';
+      });
+
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      const blob = new Blob([decrypted], { type: 'video/mp4' });
+      objectUrl = URL.createObjectURL(blob);
+
+      video.src = objectUrl;
+      videoWrapper.style.display = 'flex';
+      loadingScreen.style.display = 'none';
+      skipBar.style.display = 'flex';
+      subtitleOverlay.style.display = 'none';
+
+      video.play().catch(() => {});
+    } catch (err) {
+      console.error('Failed to load video:', err);
+      let message = err.message;
+      if (err.name === 'OperationError') {
+        message = 'Decryption failed — the file may be corrupted or the password may have changed since it was encrypted.';
+      }
+      showError(message);
+    }
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // ============ PASSWORD UNLOCK ============
+  async function doUnlock(password) {
+    unlockBtn.disabled = true;
+    unlockBtn.textContent = 'Verifying...';
+    passwordError.textContent = '';
+
+    try {
+      const episode = EPISODES[currentEpisode];
+      const valid = await verifyPassword(password, episode.verifySalt, episode.verifyHash);
+      if (valid) {
+        localStorage.setItem(PASSWORD_STORAGE_KEY, password);
+        cachedPassword = password;
+        showLoading();
+        await loadVideo();
+      } else {
+        lockFailed('Incorrect password');
+      }
+    } catch (err) {
+      lockFailed('Verification failed: ' + err.message);
+    }
+  }
+
+  function lockFailed(message) {
+    passwordError.textContent = message;
+    unlockBtn.disabled = false;
+    unlockBtn.textContent = 'Unlock';
+  }
+
+  unlockBtn.addEventListener('click', () => {
+    const pw = passwordInput.value;
+    if (pw) doUnlock(pw);
+  });
+
+  passwordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const pw = passwordInput.value;
+      if (pw) doUnlock(pw);
+    }
+  });
+
+  retryBtn.addEventListener('click', () => {
+    if (cachedPassword) {
+      showLoading();
+      loadVideo();
+    } else {
+      showPasswordPrompt();
+    }
+  });
+
+  // ============ EPISODE SWITCHING ============
+  async function switchEpisode(index) {
+    currentEpisode = index;
+
+    if (!cachedPassword) {
+      showPasswordPrompt();
+      return;
+    }
+
+    const episode = EPISODES[index];
+    try {
+      const valid = await verifyPassword(cachedPassword, episode.verifySalt, episode.verifyHash);
+      if (!valid) {
+        localStorage.removeItem(PASSWORD_STORAGE_KEY);
+        cachedPassword = null;
+        showPasswordPrompt();
+        passwordError.textContent = 'Cached password does not match this episode. Please re-enter.';
+        return;
+      }
+
+      showLoading();
+      await loadVideo();
+    } catch (err) {
+      showError('Failed to switch episode: ' + err.message);
+    }
+  }
+
+  episodeSelect.addEventListener('change', () => {
+    const idx = parseInt(episodeSelect.value, 10);
+    fetchSubtitles(EPISODES[idx].csvUrl);
+    switchEpisode(idx);
+  });
+
+  // ============ SKIP BUTTONS ============
+  document.querySelectorAll('.skip-bar button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const skip = parseFloat(btn.dataset.skip);
+      if (!isNaN(skip)) {
+        video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + skip));
+      }
+    });
+  });
+
+  // ============ KEYBOARD ============
+  document.addEventListener('keydown', e => {
+    if (!video.src) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.tagName === 'SELECT') return;
+
+    const shift = e.shiftKey;
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        video.currentTime = Math.max(0, video.currentTime - (shift ? 1 : 5));
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        video.currentTime = Math.min(video.duration || Infinity, video.currentTime + (shift ? 1 : 5));
+        break;
+    }
+  });
+
+  // ============ VIDEO EVENTS ============
+  video.addEventListener('timeupdate', updateSubtitleOverlay);
+
+  // ============ INIT ============
+  async function init() {
+    fetchSubtitles(EPISODES[0].csvUrl);
+
+    const storedPassword = localStorage.getItem(PASSWORD_STORAGE_KEY);
+    if (storedPassword) {
+      const episode = EPISODES[0];
+      try {
+        const valid = await verifyPassword(storedPassword, episode.verifySalt, episode.verifyHash);
+        if (valid) {
+          cachedPassword = storedPassword;
+          showLoading();
+          await loadVideo();
+          return;
+        }
+      } catch (e) {
+        console.error('Auto-unlock verification failed:', e);
+      }
+      localStorage.removeItem(PASSWORD_STORAGE_KEY);
+    }
+
+    showPasswordPrompt();
+  }
+
+  init();
+</script>
+</body>
+</html>
