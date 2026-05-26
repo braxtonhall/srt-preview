@@ -239,7 +239,6 @@
     bottom: 48px;
     left: 50%;
     transform: translateX(-50%);
-    max-width: 90%;
     text-align: center;
     background: rgba(0, 0, 0, 0.75);
     color: #fff;
@@ -253,6 +252,7 @@
 
   .subtitle-overlay .line {
     display: block;
+    white-space: nowrap;
   }
 
   .subtitle-overlay.no-subs {
@@ -353,6 +353,7 @@
   <div class="toggle-group" id="toggleGroup">
     <button id="toggleSource" class="active">Source</button>
     <button id="toggleTarget">Target</button>
+    <button id="toggleBoth">Both</button>
   </div>
   <button class="refresh-btn" id="refreshBtn" title="Refresh subtitles from spreadsheet">
     <span class="refresh-icon">&#x21bb;</span> Refresh
@@ -416,7 +417,7 @@
 
   // ============ STATE ============
   let subtitles = [];
-  let showSource = true;
+  let subtitleMode = 'source';
   let subtitleLoading = false;
   let currentEpisode = 0;
   let cachedPassword = null;
@@ -432,6 +433,7 @@
   const episodeSelect = document.getElementById('episodeSelect');
   const toggleSourceBtn = document.getElementById('toggleSource');
   const toggleTargetBtn = document.getElementById('toggleTarget');
+  const toggleBothBtn = document.getElementById('toggleBoth');
   const refreshBtn = document.getElementById('refreshBtn');
   const subtitleStatus = document.getElementById('subtitleStatus');
   const mainArea = document.getElementById('mainArea');
@@ -613,22 +615,23 @@
     subtitleOverlay.classList.remove('no-subs');
     subtitleOverlay.innerHTML = '';
 
-    const line1 = showSource ? sub.source1 : sub.trans1;
-    const line2 = showSource ? sub.source2 : sub.trans2;
+    const lines = [];
+    if (subtitleMode === 'source' || subtitleMode === 'both') {
+      if (sub.source1) lines.push(sub.source1);
+      if (sub.source2) lines.push(sub.source2);
+    }
+    if (subtitleMode === 'target' || subtitleMode === 'both') {
+      if (sub.trans1) lines.push(sub.trans1);
+      if (sub.trans2) lines.push(sub.trans2);
+    }
 
-    if (line1 || line2) {
+    if (lines.length > 0) {
       subtitleOverlay.style.display = 'block';
-      if (line1) {
-        const l1 = document.createElement('span');
-        l1.className = 'line';
-        l1.textContent = line1;
-        subtitleOverlay.appendChild(l1);
-      }
-      if (line2) {
-        const l2 = document.createElement('span');
-        l2.className = 'line';
-        l2.textContent = line2;
-        subtitleOverlay.appendChild(l2);
+      for (const text of lines) {
+        const span = document.createElement('span');
+        span.className = 'line';
+        span.textContent = text;
+        subtitleOverlay.appendChild(span);
       }
     } else {
       subtitleOverlay.style.display = 'none';
@@ -636,15 +639,17 @@
   }
 
   // ============ TOGGLE ============
-  function setToggle(state) {
-    showSource = state;
-    toggleSourceBtn.classList.toggle('active', state);
-    toggleTargetBtn.classList.toggle('active', !state);
+  function setToggle(mode) {
+    subtitleMode = mode;
+    toggleSourceBtn.classList.toggle('active', mode === 'source');
+    toggleTargetBtn.classList.toggle('active', mode === 'target');
+    toggleBothBtn.classList.toggle('active', mode === 'both');
     updateSubtitleOverlay();
   }
 
-  toggleSourceBtn.addEventListener('click', () => setToggle(true));
-  toggleTargetBtn.addEventListener('click', () => setToggle(false));
+  toggleSourceBtn.addEventListener('click', () => setToggle('source'));
+  toggleTargetBtn.addEventListener('click', () => setToggle('target'));
+  toggleBothBtn.addEventListener('click', () => setToggle('both'));
 
   // ============ REFRESH ============
   refreshBtn.addEventListener('click', () => {
@@ -909,6 +914,13 @@
 
   // ============ VIDEO EVENTS ============
   video.addEventListener('timeupdate', updateSubtitleOverlay);
+
+  video.addEventListener('error', () => {
+    const error = video.error;
+    if (error) {
+      showError('Video playback error (code ' + error.code + '): ' + error.message);
+    }
+  });
 
   // ============ INIT ============
   async function init() {
