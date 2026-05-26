@@ -220,9 +220,15 @@
 
   .video-wrapper {
     display: none;
-    position: relative;
+    flex-direction: row;
     width: 100%;
     height: 100%;
+  }
+
+  .video-inner {
+    flex: 1;
+    position: relative;
+    min-width: 0;
   }
 
   video {
@@ -248,6 +254,64 @@
     line-height: 1.6;
     pointer-events: none;
     z-index: 5;
+  }
+
+  .subtitle-sidebar {
+    flex-shrink: 0;
+    width: 320px;
+    overflow-y: auto;
+    background: #0d0d0d;
+    border-right: 1px solid #1a1a1a;
+  }
+
+  .subtitle-sidebar .sub-row {
+    display: flex;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #141414;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    transition: background 0.1s;
+  }
+
+  .subtitle-sidebar .sub-row:hover {
+    background: #181818;
+  }
+
+  .subtitle-sidebar .sub-row.active {
+    background: #1e3852;
+  }
+
+  .subtitle-sidebar .sub-row.flagged {
+    border-left: 3px solid #c8a835;
+    padding-left: 7px;
+  }
+
+  .subtitle-sidebar .sub-row.approved .sub-text {
+    color: #555;
+  }
+
+  .subtitle-sidebar .sub-row .sub-text {
+    color: #bbb;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .subtitle-sidebar .sub-row.active .sub-text {
+    color: #ddd;
+  }
+
+  .subtitle-sidebar .sub-time {
+    flex-shrink: 0;
+    color: #444;
+    font-size: 0.65rem;
+    margin-left: auto;
+    padding-left: 8px;
+  }
+
+  .subtitle-sidebar .sub-row.active .sub-time {
+    color: #567;
   }
 
   .subtitle-overlay .line {
@@ -378,8 +442,11 @@
   </div>
 
   <div class="video-wrapper" id="videoWrapper">
-    <video id="video" controls crossorigin="anonymous"></video>
-    <div class="subtitle-overlay" id="subtitleOverlay"></div>
+    <div class="subtitle-sidebar" id="subtitleSidebar"></div>
+    <div class="video-inner" id="videoInner">
+      <video id="video" controls crossorigin="anonymous"></video>
+      <div class="subtitle-overlay" id="subtitleOverlay"></div>
+    </div>
   </div>
 
   <div class="load-error" id="loadError">
@@ -447,6 +514,7 @@
   const videoWrapper = document.getElementById('videoWrapper');
   const video = document.getElementById('video');
   const subtitleOverlay = document.getElementById('subtitleOverlay');
+  const subtitleSidebar = document.getElementById('subtitleSidebar');
   const skipBar = document.getElementById('skipBar');
   const loadError = document.getElementById('loadError');
   const loadErrorText = document.getElementById('loadErrorText');
@@ -563,11 +631,14 @@
           source2: (row[5] || '').trim(),
           trans1: (row[6] || '').trim(),
           trans2: (row[7] || '').trim(),
+          approved: (row[0] || '').trim().toUpperCase() === 'TRUE',
+          flagged: (row[1] || '').trim().toUpperCase() === 'TRUE',
         });
       }
 
       subtitleStatus.textContent = subtitles.length + ' subtitles loaded';
       subtitleStatus.style.color = '#4a8';
+      buildSidebar();
       updateSubtitleOverlay();
     } catch (err) {
       console.error('Failed to fetch subtitles:', err);
@@ -638,12 +709,73 @@
     }
   }
 
+  function buildSidebar() {
+    subtitleSidebar.innerHTML = '';
+
+    subtitles.forEach((sub, i) => {
+      const row = document.createElement('div');
+      row.className = 'sub-row';
+      if (sub.flagged) row.classList.add('flagged');
+      if (sub.approved) row.classList.add('approved');
+      row.dataset.index = i;
+
+      const text = document.createElement('span');
+      text.className = 'sub-text';
+      const line1 = subtitleMode === 'both' ? sub.trans1 : (subtitleMode === 'target' ? sub.trans1 : sub.source1);
+      const line2 = subtitleMode === 'both' ? sub.trans2 : (subtitleMode === 'target' ? sub.trans2 : sub.source2);
+      text.textContent = [line1, line2].filter(Boolean).join(' ');
+
+      const time = document.createElement('span');
+      time.className = 'sub-time';
+      time.textContent = formatTime(sub.start);
+
+      row.appendChild(text);
+      row.appendChild(time);
+
+      row.addEventListener('click', () => {
+        video.currentTime = sub.start;
+      });
+
+      subtitleSidebar.appendChild(row);
+    });
+
+    updateSidebarHighlight();
+  }
+
+  function formatTime(totalSec) {
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = Math.floor(totalSec % 60);
+    if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function updateSidebarHighlight() {
+    if (subtitles.length === 0) return;
+
+    const idx = subtitles.findIndex(s => video.currentTime >= s.start && video.currentTime <= s.end);
+
+    let found = null;
+    if (idx !== -1) {
+      found = subtitleSidebar.querySelector('[data-index="' + idx + '"]');
+    }
+
+    const prev = subtitleSidebar.querySelector('.sub-row.active');
+    if (prev) prev.classList.remove('active');
+
+    if (found) {
+      found.classList.add('active');
+      found.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
   // ============ TOGGLE ============
   function setToggle(mode) {
     subtitleMode = mode;
     toggleSourceBtn.classList.toggle('active', mode === 'source');
     toggleTargetBtn.classList.toggle('active', mode === 'target');
     toggleBothBtn.classList.toggle('active', mode === 'both');
+    buildSidebar();
     updateSubtitleOverlay();
   }
 
@@ -913,7 +1045,10 @@
   });
 
   // ============ VIDEO EVENTS ============
-  video.addEventListener('timeupdate', updateSubtitleOverlay);
+  video.addEventListener('timeupdate', () => {
+    updateSubtitleOverlay();
+    updateSidebarHighlight();
+  });
 
   video.addEventListener('error', () => {
     const error = video.error;
