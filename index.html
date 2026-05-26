@@ -262,12 +262,22 @@
 
   .video-inner {
     flex: 1;
+    display: flex;
+    flex-direction: column;
     position: relative;
     min-width: 0;
   }
 
+  .video-stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+
   video {
-    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -736,6 +746,10 @@
     background: #333;
   }
 
+  .play-btn {
+    min-width: 60px;
+  }
+
   .skip-bar button .key {
     font-size: 0.7rem;
     color: #888;
@@ -768,6 +782,85 @@
 
   .load-error button:hover {
     background: #333;
+  }
+
+  .waveform-bar {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #0d0d0d;
+    border-top: 1px solid #1a1a1a;
+    position: relative;
+  }
+
+  .waveform-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    flex-shrink: 0;
+  }
+
+  .waveform-zoom-btn {
+    background: #1a1a1a;
+    color: #555;
+    border: 1px solid #2a2a2a;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+
+  .waveform-zoom-btn:hover {
+    color: #bbb;
+    border-color: #444;
+  }
+
+  .waveform-duration {
+    margin-left: auto;
+    font-size: 0.65rem;
+    color: #444;
+    font-family: monospace;
+  }
+
+  .waveform-canvas {
+    display: block;
+    width: 100%;
+    height: 82px;
+    cursor: crosshair;
+    flex-shrink: 0;
+  }
+
+  .waveform-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.88);
+    color: #ccc;
+    font-size: 0.7rem;
+    font-family: monospace;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    z-index: 10;
+  }
+
+  .waveform-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 82px;
+    flex-shrink: 0;
+  }
+
+  .waveform-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #222;
+    border-top-color: #4a90d9;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
   }
 </style>
 </head>
@@ -811,8 +904,22 @@
   <div class="video-wrapper" id="videoWrapper">
     <div class="subtitle-sidebar" id="subtitleSidebar"></div>
     <div class="video-inner" id="videoInner">
-      <video id="video" controls crossorigin="anonymous"></video>
-      <div class="subtitle-overlay" id="subtitleOverlay"></div>
+      <div class="video-stage">
+        <video id="video" controls crossorigin="anonymous"></video>
+        <div class="subtitle-overlay" id="subtitleOverlay"></div>
+      </div>
+      <div class="waveform-bar" id="waveformBar" style="display:none;">
+        <div class="waveform-toolbar">
+          <button class="waveform-zoom-btn" id="waveZoomOut" title="Zoom out">−</button>
+          <button class="waveform-zoom-btn" id="waveZoomIn" title="Zoom in">+</button>
+          <span class="waveform-duration" id="waveDurationLabel"></span>
+        </div>
+        <div class="waveform-loading" id="waveformLoading">
+          <div class="waveform-spinner"></div>
+        </div>
+        <canvas class="waveform-canvas" id="waveformCanvas" style="display:none;"></canvas>
+        <div class="waveform-tooltip" id="waveformTooltip" style="display:none;"></div>
+      </div>
     </div>
   </div>
 
@@ -828,6 +935,9 @@
   </button>
   <button data-skip="-1" title="Skip back 1 second">
     -1s <span class="key">Shift &#8592;</span>
+  </button>
+  <button class="primary play-btn" id="playPauseBtn" title="Play / Pause">
+    <span id="playPauseIcon">&#x25B6;</span> <span class="key">Space</span>
   </button>
   <button data-skip="1" title="Skip forward 1 second">
     +1s <span class="key">Shift &#8594;</span>
@@ -858,6 +968,14 @@
   let currentEpisode = 0;
   let cachedPassword = null;
   let objectUrl = null;
+  let waveformPeaks = null;
+  let waveformDuration = 0;
+  let viewStart = 0;
+  let viewDuration = 0;
+  let hoverTime = null;
+  let dragState = null;
+  let hoverEdge = null;
+  let manualScrollTimer = null;
 
   // Auth + edit state
   let authToken = null;
@@ -899,6 +1017,16 @@
   const signInBtn = document.getElementById('signInBtn');
   const signOutBtn = document.getElementById('signOutBtn');
   const authUserDisplay = document.getElementById('authUserDisplay');
+  const waveformBar = document.getElementById('waveformBar');
+  const waveformCanvas = document.getElementById('waveformCanvas');
+  const waveformCtx = waveformCanvas.getContext('2d');
+  const waveformTooltip = document.getElementById('waveformTooltip');
+  const waveZoomOutBtn = document.getElementById('waveZoomOut');
+  const waveZoomInBtn = document.getElementById('waveZoomIn');
+  const waveDurationLabel = document.getElementById('waveDurationLabel');
+  const waveformLoading = document.getElementById('waveformLoading');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  const playPauseIcon = document.getElementById('playPauseIcon');
 
   // ============ EPISODE DROPDOWN ============
   EPISODES.forEach((ep, i) => {
@@ -1061,7 +1189,27 @@
       return;
     }
 
-    const sub = findSubtitle(video.currentTime);
+    const t = video.currentTime;
+    let sub = null;
+
+    if (editingIndex !== null && editValues) {
+      if (t >= editValues.start && t <= editValues.end) {
+        sub = subtitles[editingIndex];
+      }
+    }
+
+    if (!sub) sub = findSubtitle(t);
+
+    if (sub && editingIndex !== null && sub === subtitles[editingIndex] && editValues) {
+      if (t < editValues.start || t > editValues.end) {
+        sub = null;
+        for (let i = 0; i < subtitles.length; i++) {
+          if (i === editingIndex) continue;
+          const s = subtitles[i];
+          if (t >= s.start && t <= s.end) { sub = s; break; }
+        }
+      }
+    }
 
     if (!sub) {
       subtitleOverlay.style.display = 'block';
@@ -1127,6 +1275,7 @@
     });
 
     updateSidebarHighlight();
+    if (waveformPeaks) drawWaveform();
   }
 
   function renderDisplayRow(row, sub, i) {
@@ -1416,12 +1565,18 @@
         editValues.start = editValues.end;
         setTimingInput('start', editValues.end);
       }
+      if (waveformPeaks) drawWaveform();
+      updateSubtitleOverlay();
     }
 
     input.addEventListener('input', () => {
       const parsed = parseSRTTime(input.value);
       input.classList.toggle('invalid', isNaN(parsed));
-      if (!isNaN(parsed)) editValues[field] = parsed;
+      if (!isNaN(parsed)) {
+        editValues[field] = parsed;
+        if (waveformPeaks) drawWaveform();
+        updateSubtitleOverlay();
+      }
       syncValidity();
     });
     input.addEventListener('click', (e) => e.stopPropagation());
@@ -1511,7 +1666,28 @@
   function updateSidebarHighlight() {
     if (subtitles.length === 0) return;
 
-    const idx = subtitles.findIndex(s => video.currentTime >= s.start && video.currentTime <= s.end);
+    const t = video.currentTime;
+    let idx = -1;
+
+    if (editingIndex !== null && editValues) {
+      if (t >= editValues.start && t <= editValues.end) {
+        idx = editingIndex;
+      }
+    }
+
+    if (idx === -1) {
+      idx = subtitles.findIndex(s => t >= s.start && t <= s.end);
+    }
+
+    if (idx === editingIndex && editValues) {
+      if (t < editValues.start || t > editValues.end) {
+        idx = -1;
+        for (let i = 0; i < subtitles.length; i++) {
+          if (i === editingIndex) continue;
+          if (t >= subtitles[i].start && t <= subtitles[i].end) { idx = i; break; }
+        }
+      }
+    }
 
     let found = null;
     if (idx !== -1) {
@@ -1957,6 +2133,7 @@
   // ============ VIDEO LOADING ============
   async function loadVideo() {
     const episode = EPISODES[currentEpisode];
+    resetWaveform();
 
     try {
       const decrypted = await downloadAndDecrypt(episode.videoUrl, cachedPassword, (received, total) => {
@@ -1974,6 +2151,10 @@
       loadingScreen.style.display = 'none';
       skipBar.style.display = 'flex';
       subtitleOverlay.style.display = 'none';
+      waveformBar.style.display = '';
+      waveformLoading.style.display = '';
+      waveformCanvas.style.display = 'none';
+      generateWaveform(decrypted);
 
       video.play().catch(() => {});
     } catch (err) {
@@ -2084,6 +2265,18 @@
     });
   });
 
+  playPauseBtn.addEventListener('click', () => {
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  });
+
+  function updatePlayPauseIcon() {
+    playPauseIcon.innerHTML = video.paused ? '&#x25B6;' : '&#x23F8;';
+  }
+
+  video.addEventListener('play', updatePlayPauseIcon);
+  video.addEventListener('pause', updatePlayPauseIcon);
+
   // ============ KEYBOARD ============
   document.addEventListener('keydown', e => {
     if (!video.src) return;
@@ -2092,6 +2285,11 @@
 
     const shift = e.shiftKey;
     switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        if (video.paused) video.play().catch(() => {});
+        else video.pause();
+        break;
       case 'ArrowLeft':
         e.preventDefault();
         video.currentTime = Math.max(0, video.currentTime - (shift ? 1 : 5));
@@ -2108,6 +2306,11 @@
     updateSubtitleOverlay();
     updateSidebarHighlight();
     updateNowButtons();
+    if (waveformPeaks && !video.paused) waveformTimeUpdate();
+  });
+
+  video.addEventListener('seeked', () => {
+    if (waveformPeaks) drawWaveform();
   });
 
   video.addEventListener('error', () => {
@@ -2115,6 +2318,475 @@
     if (error) {
       showError('Video playback error (code ' + error.code + '): ' + error.message);
     }
+  });
+
+  // ============ WAVEFORM ============
+  function resizeWaveformCanvas() {
+    if (!waveformPeaks) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = waveformCanvas.clientWidth;
+    const h = waveformCanvas.clientHeight;
+    if (w === 0 || h === 0) return;
+    waveformCanvas.width = w * dpr;
+    waveformCanvas.height = h * dpr;
+    waveformCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawWaveform();
+  }
+
+  function timeToPixel(time) {
+    if (viewDuration <= 0) return 0;
+    return ((time - viewStart) / viewDuration) * waveformCanvas.clientWidth;
+  }
+
+  function pixelToTime(px) {
+    return viewStart + (px / waveformCanvas.clientWidth) * viewDuration;
+  }
+
+  function eventToTime(e) {
+    const rect = waveformCanvas.getBoundingClientRect();
+    return pixelToTime(e.clientX - rect.left);
+  }
+
+  function clampView() {
+    viewStart = Math.max(0, Math.min(Math.max(0, waveformDuration - viewDuration), viewStart));
+    if (viewDuration >= waveformDuration) viewStart = 0;
+  }
+
+  async function generateWaveform(audioData) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioCtx.decodeAudioData(audioData.slice(0));
+      waveformDuration = audioBuffer.duration;
+
+      const rawData = audioBuffer.getChannelData(0);
+      if (audioBuffer.numberOfChannels > 1) {
+        const right = audioBuffer.getChannelData(1);
+        for (let i = 0; i < rawData.length; i++) {
+          rawData[i] = Math.abs(rawData[i]) + Math.abs(right[i]);
+        }
+      } else {
+        for (let i = 0; i < rawData.length; i++) {
+          rawData[i] = Math.abs(rawData[i]);
+        }
+      }
+
+      const samplesPerPeak = Math.max(1, Math.floor(audioBuffer.sampleRate / 100));
+      const numPeaks = Math.ceil(rawData.length / samplesPerPeak);
+      waveformPeaks = new Float32Array(numPeaks);
+
+      for (let i = 0; i < numPeaks; i++) {
+        const start = i * samplesPerPeak;
+        const end = Math.min(start + samplesPerPeak, rawData.length);
+        let max = 0;
+        for (let j = start; j < end; j++) {
+          if (rawData[j] > max) max = rawData[j];
+        }
+        waveformPeaks[i] = max;
+      }
+
+      audioCtx.close();
+
+      viewStart = 0;
+      viewDuration = Math.min(waveformDuration, 60);
+
+      waveformLoading.style.display = 'none';
+      waveformCanvas.style.display = '';
+      requestAnimationFrame(() => {
+        resizeWaveformCanvas();
+        drawWaveform();
+      });
+    } catch (e) {
+      console.warn('Could not decode audio waveform:', e);
+      waveformPeaks = null;
+      waveformDuration = 0;
+      waveformLoading.style.display = 'none';
+    }
+  }
+
+  function drawWaveform() {
+    if (!waveformPeaks || !waveformDuration || waveformCanvas.clientWidth === 0) return;
+
+    const ctx = waveformCtx;
+    const w = waveformCanvas.clientWidth;
+    const h = waveformCanvas.clientHeight;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const peakCount = waveformPeaks.length;
+    const viewEnd = viewStart + viewDuration;
+    const startPeak = Math.max(0, Math.floor((viewStart / waveformDuration) * peakCount));
+    const endPeak = Math.min(peakCount, Math.ceil((viewEnd / waveformDuration) * peakCount));
+    const peaksPerPixel = (endPeak - startPeak) / w;
+
+    const barHalfH = (h - 18) / 2;
+    const waveTop = 15;
+    for (let x = 0; x < w; x++) {
+      const base = startPeak + x * peaksPerPixel;
+      const sampleEnd = Math.min(peakCount, Math.ceil(base + peaksPerPixel));
+      let maxPeak = 0;
+      for (let k = Math.floor(base); k < sampleEnd; k++) {
+        if (waveformPeaks[k] > maxPeak) maxPeak = waveformPeaks[k];
+      }
+
+      const barH = Math.max(1, maxPeak * barHalfH * 2);
+      const y = waveTop + (h - waveTop - barH) / 2;
+
+      if (maxPeak > 0.7) ctx.fillStyle = '#5a8ec5';
+      else if (maxPeak > 0.3) ctx.fillStyle = '#3a6ea5';
+      else ctx.fillStyle = '#2a5a80';
+
+      ctx.fillRect(x, y, 1, barH);
+    }
+
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = subtitles[i];
+      const isEditing = editingIndex === i;
+
+      let regionStart, regionEnd;
+      if (isEditing && editValues) {
+        regionStart = editValues.start;
+        regionEnd = editValues.end;
+      } else {
+        regionStart = sub.start;
+        regionEnd = sub.end;
+      }
+
+      const x1 = timeToPixel(regionStart);
+      const x2 = timeToPixel(regionEnd);
+      if (x2 < 0 || x1 > w) continue;
+
+      const rx = Math.max(0, x1);
+      const rw = Math.min(w, x2) - rx;
+      if (rw < 1) continue;
+
+      if (isEditing) {
+        ctx.fillStyle = 'rgba(200,168,53,0.45)';
+      } else if (sub.flagged) {
+        ctx.fillStyle = 'rgba(200,168,53,0.3)';
+      } else if (sub.approved) {
+        ctx.fillStyle = 'rgba(58,110,165,0.12)';
+      } else {
+        ctx.fillStyle = 'rgba(58,110,165,0.2)';
+      }
+
+      ctx.fillRect(rx, waveTop, rw, h - waveTop);
+
+      ctx.strokeStyle = isEditing ? 'rgba(200,168,53,0.8)' : 'rgba(58,110,165,0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(rx, waveTop);
+      ctx.lineTo(rx, h);
+      ctx.moveTo(rx + rw, waveTop);
+      ctx.lineTo(rx + rw, h);
+      ctx.stroke();
+
+      const line1 = subtitleMode === 'both' ? sub.trans1 : (subtitleMode === 'target' ? sub.trans1 : sub.source1);
+      const line2 = subtitleMode === 'both' ? sub.trans2 : (subtitleMode === 'target' ? sub.trans2 : sub.source2);
+      let label = [line1, line2].filter(Boolean).join(' ');
+      if (!label) label = String(i + 1);
+
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      const textW = ctx.measureText(label).width;
+      const labelX = Math.max(4, Math.min(w - textW - 8, rx + rw / 2 - textW / 2));
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(labelX - 2, 3, textW + 4, 11);
+      ctx.fillStyle = isEditing ? '#fff' : '#bbb';
+      ctx.fillText(label, labelX, 12);
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 14);
+    ctx.lineTo(w, 14);
+    ctx.stroke();
+
+    if (hoverEdge && !dragState) {
+      const heSub = editingIndex === hoverEdge.index && editValues ? editValues : subtitles[hoverEdge.index];
+      const hex = timeToPixel(heSub[hoverEdge.edge]);
+      if (hex >= 0 && hex <= w) {
+        ctx.fillStyle = 'rgba(255,255,200,0.5)';
+        ctx.fillRect(hex - 4, waveTop, 8, h - waveTop);
+        ctx.strokeStyle = 'rgba(255,255,100,0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(hex, waveTop);
+        ctx.lineTo(hex, h);
+        ctx.stroke();
+      }
+    }
+
+    const playX = timeToPixel(video.currentTime);
+    if (playX >= 0 && playX <= w) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(playX, waveTop);
+      ctx.lineTo(playX, h);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(playX, waveTop);
+      ctx.lineTo(playX - 5, waveTop - 5);
+      ctx.lineTo(playX + 5, waveTop - 5);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (hoverTime !== null && !dragState) {
+      const hx = timeToPixel(hoverTime);
+      if (hx >= 0 && hx <= w) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(hx, 0);
+        ctx.lineTo(hx, h);
+        ctx.stroke();
+      }
+    }
+
+    if (dragState && dragState.index < subtitles.length) {
+      const sv = editingIndex === dragState.index && editValues ? editValues : subtitles[dragState.index];
+      const ex = timeToPixel(sv[dragState.edge]);
+      if (ex >= 0 && ex <= w) {
+        ctx.strokeStyle = 'rgba(255,255,0,0.8)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(ex, 2);
+        ctx.lineTo(ex, h - 2);
+        ctx.stroke();
+      }
+    }
+
+    waveDurationLabel.textContent = formatTime(viewStart) + ' \u2013 ' + formatTime(viewStart + viewDuration);
+  }
+
+  function waveformTimeUpdate() {
+    if (!waveformPeaks || video.paused) return;
+
+    if (!dragState && manualScrollTimer === null) {
+      const playX = timeToPixel(video.currentTime);
+      const w = waveformCanvas.clientWidth;
+      const margin = w * 0.15;
+
+      if (playX < -margin || playX > w + margin) {
+        viewStart = video.currentTime - viewDuration * 0.25;
+        clampView();
+        drawWaveform();
+        return;
+      }
+
+      if (playX < margin || playX > w - margin) {
+        const ideal = video.currentTime - viewDuration * 0.25;
+        viewStart += (ideal - viewStart) * 0.15;
+        clampView();
+        drawWaveform();
+        return;
+      }
+    }
+
+    drawWaveform();
+  }
+
+  function startManualScroll() {
+    clearTimeout(manualScrollTimer);
+    manualScrollTimer = setTimeout(() => { manualScrollTimer = null; }, 3000);
+  }
+
+  function resetWaveform() {
+    waveformPeaks = null;
+    waveformDuration = 0;
+    viewStart = 0;
+    viewDuration = 0;
+    hoverTime = null;
+    hoverEdge = null;
+    dragState = null;
+    clearTimeout(manualScrollTimer);
+    manualScrollTimer = null;
+    waveformBar.style.display = 'none';
+    waveformLoading.style.display = '';
+    waveformCanvas.style.display = 'none';
+  }
+
+  function zoomWaveformAt(factor, centerX) {
+    const centerTime = pixelToTime(centerX);
+    viewDuration = Math.max(0.5, Math.min(waveformDuration, viewDuration * factor));
+    viewStart = centerTime - (centerX / waveformCanvas.clientWidth) * viewDuration;
+    clampView();
+    startManualScroll();
+    drawWaveform();
+  }
+
+  waveformCanvas.addEventListener('mousedown', (e) => {
+    if (!waveformPeaks) return;
+    e.preventDefault();
+
+    const rect = waveformCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const t = eventToTime(e);
+    const EDGE_PX = 8;
+    let bestDist = EDGE_PX + 1;
+    let bestEdge = null;
+
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = editingIndex === i && editValues ? editValues : subtitles[i];
+      const sx = timeToPixel(sub.start);
+      const ex = timeToPixel(sub.end);
+
+      const dStart = Math.abs(cssX - sx);
+      const dEnd = Math.abs(cssX - ex);
+      if (dStart <= EDGE_PX && dStart < bestDist) { bestDist = dStart; bestEdge = { index: i, edge: 'start' }; }
+      if (dEnd <= EDGE_PX && dEnd < bestDist) { bestDist = dEnd; bestEdge = { index: i, edge: 'end' }; }
+    }
+
+    if (bestEdge && authToken) {
+      if (editingIndex !== bestEdge.index) openEditForWaveform(bestEdge.index);
+      dragState = bestEdge;
+      drawWaveform();
+      return;
+    }
+
+    for (let i = 0; i < subtitles.length; i++) {
+      const ev = editingIndex === i && editValues ? editValues : subtitles[i];
+      if (t >= ev.start && t <= ev.end) {
+        video.currentTime = Math.max(0, Math.min(waveformDuration || Infinity, t));
+        return;
+      }
+    }
+
+    video.currentTime = Math.max(0, Math.min(waveformDuration || Infinity, t));
+  });
+
+  function openEditForWaveform(i) {
+    const sub = subtitles[i];
+    editingIndex = i;
+    editValues = {
+      start: sub.start, end: sub.end,
+      source1: sub.source1, source2: sub.source2,
+      trans1: sub.trans1, trans2: sub.trans2,
+    };
+    buildSidebar();
+    const row = subtitleSidebar.querySelector('[data-index="' + i + '"]');
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  }
+
+  waveformCanvas.addEventListener('mousemove', (e) => {
+    if (!waveformPeaks) return;
+
+    const rect = waveformCanvas.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    hoverTime = pixelToTime(cssX);
+
+    hoverEdge = null;
+    let bestDist = 9;
+    const EDGE_PX = 8;
+    if (authToken) {
+      for (let i = 0; i < subtitles.length; i++) {
+        const sub = editingIndex === i && editValues ? editValues : subtitles[i];
+        const sx = timeToPixel(sub.start);
+        const ex = timeToPixel(sub.end);
+        const dStart = Math.abs(cssX - sx);
+        const dEnd = Math.abs(cssX - ex);
+        if (dStart <= EDGE_PX && dStart < bestDist) { bestDist = dStart; hoverEdge = { index: i, edge: 'start' }; }
+        if (dEnd <= EDGE_PX && dEnd < bestDist) { bestDist = dEnd; hoverEdge = { index: i, edge: 'end' }; }
+      }
+    }
+    waveformCanvas.style.cursor = dragState ? 'col-resize' : (hoverEdge ? 'col-resize' : 'crosshair');
+
+    if (dragState) {
+      const ds = dragState;
+      let newTime = Math.max(0, pixelToTime(cssX));
+      newTime = Math.round(newTime * 1000) / 1000;
+
+      if (ds.edge === 'start') {
+        const prevEnd = ds.index > 0 ? subtitles[ds.index - 1].end : 0;
+        newTime = Math.max(prevEnd + 0.001, Math.min(editValues.end - 0.001, newTime));
+      } else {
+        const nextStart = ds.index < subtitles.length - 1 ? subtitles[ds.index + 1].start : waveformDuration;
+        newTime = Math.max(editValues.start + 0.001, Math.min(nextStart - 0.001, newTime));
+      }
+
+      editValues[ds.edge] = newTime;
+      setTimingInput(ds.edge, newTime);
+      drawWaveform();
+      updateSubtitleOverlay();
+
+      waveformTooltip.style.display = 'block';
+      waveformTooltip.textContent = formatSRTTime(newTime);
+      waveformTooltip.style.left = cssX + 'px';
+      waveformTooltip.style.top = (waveformCanvas.offsetTop + 2) + 'px';
+      return;
+    }
+
+    waveformTooltip.style.display = 'block';
+    waveformTooltip.textContent = formatSRTTime(hoverTime);
+    waveformTooltip.style.left = cssX + 'px';
+    waveformTooltip.style.top = (waveformCanvas.offsetTop + 2) + 'px';
+
+    drawWaveform();
+  });
+
+  waveformCanvas.addEventListener('mouseup', () => {
+    if (dragState) {
+      dragState = null;
+      drawWaveform();
+    }
+  });
+
+  waveformCanvas.addEventListener('mouseleave', () => {
+    hoverTime = null;
+    hoverEdge = null;
+    waveformTooltip.style.display = 'none';
+    if (dragState) dragState = null;
+    drawWaveform();
+  });
+
+  waveformCanvas.addEventListener('wheel', (e) => {
+    if (!waveformPeaks) return;
+    e.preventDefault();
+
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const deltaSec = (e.deltaX || e.deltaY) / waveformCanvas.clientWidth * viewDuration;
+      viewStart += deltaSec;
+      clampView();
+      startManualScroll();
+    } else {
+      const zoomFactor = e.deltaY < 0 ? 0.7 : 1.4;
+      zoomWaveformAt(zoomFactor, timeToPixel(video.currentTime));
+      return;
+    }
+
+    drawWaveform();
+  }, { passive: false });
+
+  waveformCanvas.addEventListener('dblclick', (e) => {
+    if (!waveformPeaks || !authToken) return;
+    const t = eventToTime(e);
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = subtitles[i];
+      if (t >= sub.start && t <= sub.end) {
+        e.preventDefault();
+        openEditForWaveform(i);
+        return;
+      }
+    }
+  });
+
+  waveZoomOutBtn.addEventListener('click', () => {
+    if (!waveformPeaks) return;
+    zoomWaveformAt(1.5, timeToPixel(video.currentTime));
+  });
+
+  waveZoomInBtn.addEventListener('click', () => {
+    if (!waveformPeaks) return;
+    zoomWaveformAt(0.7, timeToPixel(video.currentTime));
+  });
+
+  window.addEventListener('resize', () => {
+    if (!waveformPeaks) return;
+    clearTimeout(window._waveResizeTimer);
+    window._waveResizeTimer = setTimeout(resizeWaveformCanvas, 100);
   });
 
   // ============ INIT ============
