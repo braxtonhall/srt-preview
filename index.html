@@ -980,8 +980,7 @@
   // Auth + edit state
   let authToken = null;
   let tokenClient = null;
-  let editingIndex = null;  // index of the subtitle row currently open for editing
-  let editValues = null;    // { source1, source2, trans1, trans2 }
+  let editStates = new Map();  // index -> { start, end, source1, source2, trans1, trans2 }
   let sheetNameCache = {};        // "spreadsheetId:gid" -> sheet tab name
   let statusDebounceTimers = {};  // subtitle index -> timeout ID
 
@@ -1120,8 +1119,7 @@
   async function fetchSubtitles(url) {
     if (subtitleLoading) return;
     subtitleLoading = true;
-    editingIndex = null;
-    editValues = null;
+    editStates.clear();
     refreshBtn.classList.add('spinning');
     subtitleStatus.textContent = 'Loading…';
     subtitleStatus.style.color = '#888';
@@ -1192,21 +1190,28 @@
     const t = video.currentTime;
     let sub = null;
 
-    if (editingIndex !== null && editValues) {
-      if (t >= editValues.start && t <= editValues.end) {
-        sub = subtitles[editingIndex];
+    if (editStates.size > 0) {
+      for (const [idx, ev] of editStates) {
+        if (t >= ev.start && t <= ev.end) {
+          sub = subtitles[idx];
+          break;
+        }
       }
     }
 
     if (!sub) sub = findSubtitle(t);
 
-    if (sub && editingIndex !== null && sub === subtitles[editingIndex] && editValues) {
-      if (t < editValues.start || t > editValues.end) {
-        sub = null;
-        for (let i = 0; i < subtitles.length; i++) {
-          if (i === editingIndex) continue;
-          const s = subtitles[i];
-          if (t >= s.start && t <= s.end) { sub = s; break; }
+    if (sub) {
+      const subIdx = subtitles.indexOf(sub);
+      if (subIdx !== -1 && editStates.has(subIdx)) {
+        const ev = editStates.get(subIdx);
+        if (t < ev.start || t > ev.end) {
+          sub = null;
+          for (let i = 0; i < subtitles.length; i++) {
+            if (editStates.has(i)) continue;
+            const s = subtitles[i];
+            if (t >= s.start && t <= s.end) { sub = s; break; }
+          }
         }
       }
     }
@@ -1225,8 +1230,8 @@
     subtitleOverlay.classList.remove('no-subs');
     subtitleOverlay.innerHTML = '';
 
-    const display = (editingIndex !== null && sub === subtitles[editingIndex] && editValues)
-      ? { ...sub, ...editValues }
+    const display = (sub && editStates.has(subtitles.indexOf(sub)))
+      ? { ...sub, ...editStates.get(subtitles.indexOf(sub)) }
       : sub;
 
     const lines = [];
@@ -1257,7 +1262,7 @@
     subtitleSidebar.innerHTML = '';
 
     subtitles.forEach((sub, i) => {
-      const isEditing = editingIndex === i;
+      const isEditing = editStates.has(i);
       const row = document.createElement('div');
       row.className = 'sub-row';
       if (sub.flagged) row.classList.add('flagged');
@@ -1293,12 +1298,11 @@
       editBtn.title = 'Edit';
       editBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        editingIndex = i;
-        editValues = {
+        editStates.set(i, {
           start: sub.start, end: sub.end,
           source1: sub.source1, source2: sub.source2,
           trans1: sub.trans1, trans2: sub.trans2,
-        };
+        });
         buildSidebar();
         const first = subtitleSidebar.querySelector('.sub-edit-input');
         if (first) first.focus();
@@ -1406,18 +1410,19 @@
   function renderEditRow(row, sub, i) {
     const showSource = subtitleMode === 'source' || subtitleMode === 'both';
     const showTarget = subtitleMode === 'target' || subtitleMode === 'both';
+    const ev = editStates.get(i);
 
     const fields = document.createElement('div');
     fields.className = 'sub-edit-fields';
 
     if (showSource) {
-      fields.appendChild(makeEditInputRow('source1', editValues.source1, 'Source'));
-      fields.appendChild(makeEditInputRow('source2', editValues.source2, 'Source 2'));
+      fields.appendChild(makeEditInputRow('source1', ev.source1, 'Source', i));
+      fields.appendChild(makeEditInputRow('source2', ev.source2, 'Source 2', i));
     }
 
     if (showTarget) {
-      fields.appendChild(makeEditInputRow('trans1', editValues.trans1, 'Translation'));
-      fields.appendChild(makeEditInputRow('trans2', editValues.trans2, 'Translation 2'));
+      fields.appendChild(makeEditInputRow('trans1', ev.trans1, 'Translation', i));
+      fields.appendChild(makeEditInputRow('trans2', ev.trans2, 'Translation 2', i));
     }
 
     const timingDetails = document.createElement('details');
@@ -1427,8 +1432,8 @@
     timingDetails.appendChild(timingSummary);
     const timingFields = document.createElement('div');
     timingFields.className = 'sub-timing-fields';
-    timingFields.appendChild(makeTimingInputRow('start', editValues.start, 'Start', i));
-    timingFields.appendChild(makeTimingInputRow('end', editValues.end, 'End', i));
+    timingFields.appendChild(makeTimingInputRow('start', ev.start, 'Start', i));
+    timingFields.appendChild(makeTimingInputRow('end', ev.end, 'End', i));
     timingDetails.appendChild(timingFields);
     fields.appendChild(timingDetails);
 
@@ -1464,8 +1469,7 @@
     cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      editingIndex = null;
-      editValues = null;
+      editStates.delete(i);
       buildSidebar();
       updateSubtitleOverlay();
     });
@@ -1503,7 +1507,7 @@
     row.appendChild(actions);
   }
 
-  function makeEditInputRow(field, value, placeholder) {
+  function makeEditInputRow(field, value, placeholder, index) {
     const wrap = document.createElement('div');
     wrap.className = 'sub-edit-row';
 
@@ -1513,12 +1517,11 @@
     input.value = value || '';
     input.placeholder = placeholder;
     input.dataset.field = field;
-    input.addEventListener('input', () => { editValues[field] = input.value; updateSubtitleOverlay(); });
+    input.addEventListener('input', () => { editStates.get(index)[field] = input.value; updateSubtitleOverlay(); });
     input.addEventListener('click', (e) => e.stopPropagation());
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        editingIndex = null;
-        editValues = null;
+        editStates.delete(index);
         buildSidebar();
       }
     });
@@ -1552,18 +1555,18 @@
     }
 
     function applyValue(val) {
+      const ev = editStates.get(index);
       const rounded = Math.round(Math.max(0, val) * 1000) / 1000;
-      editValues[field] = rounded;
+      ev[field] = rounded;
       input.value = formatSRTTime(rounded);
       input.classList.remove('invalid');
       syncValidity();
-      // If end < start after the change, pull the other field to match.
-      if (field === 'start' && editValues.end < editValues.start) {
-        editValues.end = editValues.start;
-        setTimingInput('end', editValues.start);
-      } else if (field === 'end' && editValues.start > editValues.end) {
-        editValues.start = editValues.end;
-        setTimingInput('start', editValues.end);
+      if (field === 'start' && ev.end < ev.start) {
+        ev.end = ev.start;
+        setTimingInput('end', ev.start, index);
+      } else if (field === 'end' && ev.start > ev.end) {
+        ev.start = ev.end;
+        setTimingInput('start', ev.end, index);
       }
       if (waveformPeaks) drawWaveform();
       updateSubtitleOverlay();
@@ -1573,7 +1576,7 @@
       const parsed = parseSRTTime(input.value);
       input.classList.toggle('invalid', isNaN(parsed));
       if (!isNaN(parsed)) {
-        editValues[field] = parsed;
+        editStates.get(index)[field] = parsed;
         if (waveformPeaks) drawWaveform();
         updateSubtitleOverlay();
       }
@@ -1581,20 +1584,20 @@
     });
     input.addEventListener('click', (e) => e.stopPropagation());
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { editingIndex = null; editValues = null; buildSidebar(); updateSubtitleOverlay(); }
+      if (e.key === 'Escape') { editStates.delete(index); buildSidebar(); updateSubtitleOverlay(); }
     });
 
     const decBtn = document.createElement('button');
     decBtn.className = 'sub-timing-step-btn';
     decBtn.textContent = '−';
     decBtn.title = '−100ms';
-    decBtn.addEventListener('click', (e) => { e.stopPropagation(); applyValue(editValues[field] - 0.1); });
+    decBtn.addEventListener('click', (e) => { e.stopPropagation(); applyValue(editStates.get(index)[field] - 0.1); });
 
     const incBtn = document.createElement('button');
     incBtn.className = 'sub-timing-step-btn';
     incBtn.textContent = '+';
     incBtn.title = '+100ms';
-    incBtn.addEventListener('click', (e) => { e.stopPropagation(); applyValue(editValues[field] + 0.1); });
+    incBtn.addEventListener('click', (e) => { e.stopPropagation(); applyValue(editStates.get(index)[field] + 0.1); });
 
     const nowBtn = document.createElement('button');
     nowBtn.className = 'sub-now-btn';
@@ -1615,8 +1618,14 @@
     return wrap;
   }
 
-  function setTimingInput(field, value) {
-    const input = subtitleSidebar.querySelector(`.sub-timing-input[data-field="${field}"]`);
+  function setTimingInput(field, value, index) {
+    let input;
+    if (index !== undefined) {
+      const row = subtitleSidebar.querySelector(`.sub-row.editing[data-index="${index}"]`);
+      input = row ? row.querySelector(`.sub-timing-input[data-field="${field}"]`) : null;
+    } else {
+      input = subtitleSidebar.querySelector(`.sub-timing-input[data-field="${field}"]`);
+    }
     if (!input) return;
     input.value = formatSRTTime(value);
     input.classList.remove('invalid');
@@ -1624,16 +1633,17 @@
 
   function isNowAllowed(index) {
     const t = video.currentTime;
-    const prevEnd   = index > 0                    ? subtitles[index - 1].end   : -Infinity;
-    const nextStart = index < subtitles.length - 1 ? subtitles[index + 1].start :  Infinity;
+    const prev = index > 0 ? (editStates.has(index - 1) ? editStates.get(index - 1) : subtitles[index - 1]) : null;
+    const next = index < subtitles.length - 1 ? (editStates.has(index + 1) ? editStates.get(index + 1) : subtitles[index + 1]) : null;
+    const prevEnd   = prev ? prev.end   : -Infinity;
+    const nextStart = next ? next.start :  Infinity;
     return t > prevEnd && t < nextStart;
   }
 
   function updateNowButtons() {
-    if (editingIndex === null) return;
-    const allowed = isNowAllowed(editingIndex);
     subtitleSidebar.querySelectorAll('.sub-now-btn').forEach(btn => {
-      btn.disabled = !allowed;
+      const idx = parseInt(btn.dataset.nowIndex, 10);
+      btn.disabled = editStates.has(idx) ? !isNowAllowed(idx) : true;
     });
   }
 
@@ -1669,9 +1679,12 @@
     const t = video.currentTime;
     let idx = -1;
 
-    if (editingIndex !== null && editValues) {
-      if (t >= editValues.start && t <= editValues.end) {
-        idx = editingIndex;
+    if (editStates.size > 0) {
+      for (const [editIdx, ev] of editStates) {
+        if (t >= ev.start && t <= ev.end) {
+          idx = editIdx;
+          break;
+        }
       }
     }
 
@@ -1679,11 +1692,12 @@
       idx = subtitles.findIndex(s => t >= s.start && t <= s.end);
     }
 
-    if (idx === editingIndex && editValues) {
-      if (t < editValues.start || t > editValues.end) {
+    if (idx !== -1 && editStates.has(idx)) {
+      const ev = editStates.get(idx);
+      if (t < ev.start || t > ev.end) {
         idx = -1;
         for (let i = 0; i < subtitles.length; i++) {
-          if (i === editingIndex) continue;
+          if (editStates.has(i)) continue;
           if (t >= subtitles[i].start && t <= subtitles[i].end) { idx = i; break; }
         }
       }
@@ -1737,14 +1751,15 @@
     const editTarget = subtitleMode === 'target' || subtitleMode === 'both';
 
     // Always write C:H so timings are included regardless of subtitle mode.
+    const ev = editStates.get(index);
     const range = `${sheetName}!C${rowNum}:H${rowNum}`;
     const values = [[
-      formatSRTTime(editValues.start),
-      formatSRTTime(editValues.end),
-      editSource ? (editValues.source1 || '') : sub.source1,
-      editSource ? (editValues.source2 || '') : sub.source2,
-      editTarget ? (editValues.trans1 || '') : sub.trans1,
-      editTarget ? (editValues.trans2 || '') : sub.trans2,
+      formatSRTTime(ev.start),
+      formatSRTTime(ev.end),
+      editSource ? (ev.source1 || '') : sub.source1,
+      editSource ? (ev.source2 || '') : sub.source2,
+      editTarget ? (ev.trans1 || '') : sub.trans1,
+      editTarget ? (ev.trans2 || '') : sub.trans2,
     ]];
 
     const resp = await fetch(
@@ -1773,19 +1788,18 @@
     }
 
     // Commit edits to local subtitle object
-    sub.start = editValues.start;
-    sub.end   = editValues.end;
+    sub.start = ev.start;
+    sub.end   = ev.end;
     if (editSource) {
-      sub.source1 = editValues.source1 || '';
-      sub.source2 = editValues.source2 || '';
+      sub.source1 = ev.source1 || '';
+      sub.source2 = ev.source2 || '';
     }
     if (editTarget) {
-      sub.trans1 = editValues.trans1 || '';
-      sub.trans2 = editValues.trans2 || '';
+      sub.trans1 = ev.trans1 || '';
+      sub.trans2 = ev.trans2 || '';
     }
 
-    editingIndex = null;
-    editValues = null;
+    editStates.delete(index);
     buildSidebar();
     updateSubtitleOverlay();
   }
@@ -1830,8 +1844,14 @@
     if (!resp.ok) throw new Error('Delete failed (HTTP ' + resp.status + ')');
 
     subtitles.splice(index, 1);
-    editingIndex = null;
-    editValues = null;
+    editStates.delete(index);
+    if (editStates.size > 0) {
+      const shifted = new Map();
+      for (const [idx, vals] of editStates) {
+        shifted.set(idx > index ? idx - 1 : idx, vals);
+      }
+      editStates = shifted;
+    }
     buildSidebar();
     updateSubtitleOverlay();
   }
@@ -1892,8 +1912,14 @@
     const newSub = { start: newStart, end: newEnd, source1: '', source2: '', trans1: '', trans2: '', approved: false, flagged: false };
     subtitles.splice(afterIndex + 1, 0, newSub);
 
-    editingIndex = afterIndex + 1;
-    editValues = { start: newStart, end: newEnd, source1: '', source2: '', trans1: '', trans2: '' };
+    if (editStates.size > 0) {
+      const shifted = new Map();
+      for (const [idx, vals] of editStates) {
+        shifted.set(idx > afterIndex ? idx + 1 : idx, vals);
+      }
+      editStates = shifted;
+    }
+    editStates.set(afterIndex + 1, { start: newStart, end: newEnd, source1: '', source2: '', trans1: '', trans2: '' });
 
     buildSidebar();
     subtitleSidebar.querySelector(`[data-index="${afterIndex + 1}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -1990,11 +2016,11 @@
   });
 
   signOutBtn.addEventListener('click', () => {
+    if (editStates.size > 0 && !confirm('You have unsaved edits. Sign out anyway?')) return;
     if (authToken) google.accounts.oauth2.revoke(authToken, () => {});
     clearStoredToken();
     authToken = null;
-    editingIndex = null;
-    editValues = null;
+    editStates.clear();
     signInBtn.style.display = '';
     authUserDisplay.style.display = 'none';
     signOutBtn.style.display = 'none';
@@ -2004,9 +2030,9 @@
 
   // ============ TOGGLE ============
   function setToggle(mode) {
+    if (editStates.size > 0 && !confirm('You have unsaved edits. Switch mode anyway?')) return;
     subtitleMode = mode;
-    editingIndex = null;
-    editValues = null;
+    editStates.clear();
     toggleSourceBtn.classList.toggle('active', mode === 'source');
     toggleTargetBtn.classList.toggle('active', mode === 'target');
     toggleBothBtn.classList.toggle('active', mode === 'both');
@@ -2020,6 +2046,7 @@
 
   // ============ REFRESH ============
   refreshBtn.addEventListener('click', () => {
+    if (editStates.size > 0 && !confirm('You have unsaved edits. Refresh anyway?')) return;
     fetchSubtitles(EPISODES[currentEpisode].csvUrl);
   });
 
@@ -2250,6 +2277,10 @@
   }
 
   episodeSelect.addEventListener('change', () => {
+    if (editStates.size > 0 && !confirm('You have unsaved edits. Switch episode anyway?')) {
+      episodeSelect.value = String(currentEpisode);
+      return;
+    }
     const idx = parseInt(episodeSelect.value, 10);
     fetchSubtitles(EPISODES[idx].csvUrl);
     switchEpisode(idx);
@@ -2440,12 +2471,13 @@
 
     for (let i = 0; i < subtitles.length; i++) {
       const sub = subtitles[i];
-      const isEditing = editingIndex === i;
+      const isEditing = editStates.has(i);
 
       let regionStart, regionEnd;
-      if (isEditing && editValues) {
-        regionStart = editValues.start;
-        regionEnd = editValues.end;
+      if (isEditing) {
+        const ev = editStates.get(i);
+        regionStart = ev.start;
+        regionEnd = ev.end;
       } else {
         regionStart = sub.start;
         regionEnd = sub.end;
@@ -2502,7 +2534,7 @@
     ctx.stroke();
 
     if (hoverEdge && !dragState) {
-      const heSub = editingIndex === hoverEdge.index && editValues ? editValues : subtitles[hoverEdge.index];
+      const heSub = editStates.has(hoverEdge.index) ? editStates.get(hoverEdge.index) : subtitles[hoverEdge.index];
       const hex = timeToPixel(heSub[hoverEdge.edge]);
       if (hex >= 0 && hex <= w) {
         ctx.fillStyle = 'rgba(255,255,200,0.5)';
@@ -2547,7 +2579,7 @@
     }
 
     if (dragState && dragState.index < subtitles.length) {
-      const sv = editingIndex === dragState.index && editValues ? editValues : subtitles[dragState.index];
+      const sv = editStates.has(dragState.index) ? editStates.get(dragState.index) : subtitles[dragState.index];
       const ex = timeToPixel(sv[dragState.edge]);
       if (ex >= 0 && ex <= w) {
         ctx.strokeStyle = 'rgba(255,255,0,0.8)';
@@ -2630,7 +2662,7 @@
     let bestEdge = null;
 
     for (let i = 0; i < subtitles.length; i++) {
-      const sub = editingIndex === i && editValues ? editValues : subtitles[i];
+      const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
       const sx = timeToPixel(sub.start);
       const ex = timeToPixel(sub.end);
 
@@ -2641,14 +2673,14 @@
     }
 
     if (bestEdge && authToken) {
-      if (editingIndex !== bestEdge.index) openEditForWaveform(bestEdge.index);
+      if (!editStates.has(bestEdge.index)) openEditForWaveform(bestEdge.index);
       dragState = bestEdge;
       drawWaveform();
       return;
     }
 
     for (let i = 0; i < subtitles.length; i++) {
-      const ev = editingIndex === i && editValues ? editValues : subtitles[i];
+      const ev = editStates.has(i) ? editStates.get(i) : subtitles[i];
       if (t >= ev.start && t <= ev.end) {
         video.currentTime = Math.max(0, Math.min(waveformDuration || Infinity, t));
         return;
@@ -2659,13 +2691,13 @@
   });
 
   function openEditForWaveform(i) {
+    if (editStates.has(i)) return;
     const sub = subtitles[i];
-    editingIndex = i;
-    editValues = {
+    editStates.set(i, {
       start: sub.start, end: sub.end,
       source1: sub.source1, source2: sub.source2,
       trans1: sub.trans1, trans2: sub.trans2,
-    };
+    });
     buildSidebar();
     const row = subtitleSidebar.querySelector('[data-index="' + i + '"]');
     if (row) row.scrollIntoView({ block: 'nearest' });
@@ -2683,7 +2715,7 @@
     const EDGE_PX = 8;
     if (authToken) {
       for (let i = 0; i < subtitles.length; i++) {
-        const sub = editingIndex === i && editValues ? editValues : subtitles[i];
+        const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
         const sx = timeToPixel(sub.start);
         const ex = timeToPixel(sub.end);
         const dStart = Math.abs(cssX - sx);
@@ -2696,19 +2728,29 @@
 
     if (dragState) {
       const ds = dragState;
+      const ev = editStates.get(ds.index);
+      if (!ev) return;
       let newTime = Math.max(0, pixelToTime(cssX));
       newTime = Math.round(newTime * 1000) / 1000;
 
       if (ds.edge === 'start') {
-        const prevEnd = ds.index > 0 ? subtitles[ds.index - 1].end : 0;
-        newTime = Math.max(prevEnd + 0.001, Math.min(editValues.end - 0.001, newTime));
+        let prevEnd = 0;
+        if (ds.index > 0) {
+          const prev = editStates.has(ds.index - 1) ? editStates.get(ds.index - 1) : subtitles[ds.index - 1];
+          prevEnd = prev.end;
+        }
+        newTime = Math.max(prevEnd + 0.001, Math.min(ev.end - 0.001, newTime));
       } else {
-        const nextStart = ds.index < subtitles.length - 1 ? subtitles[ds.index + 1].start : waveformDuration;
-        newTime = Math.max(editValues.start + 0.001, Math.min(nextStart - 0.001, newTime));
+        let nextStart = waveformDuration;
+        if (ds.index < subtitles.length - 1) {
+          const next = editStates.has(ds.index + 1) ? editStates.get(ds.index + 1) : subtitles[ds.index + 1];
+          nextStart = next.start;
+        }
+        newTime = Math.max(ev.start + 0.001, Math.min(nextStart - 0.001, newTime));
       }
 
-      editValues[ds.edge] = newTime;
-      setTimingInput(ds.edge, newTime);
+      ev[ds.edge] = newTime;
+      setTimingInput(ds.edge, newTime, ds.index);
       drawWaveform();
       updateSubtitleOverlay();
 
@@ -2784,9 +2826,16 @@
   });
 
   window.addEventListener('resize', () => {
-    if (!waveformPeaks) return;
-    clearTimeout(window._waveResizeTimer);
-    window._waveResizeTimer = setTimeout(resizeWaveformCanvas, 100);
+    if (waveformPeaks) {
+      drawWaveform();
+    }
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (editStates.size > 0) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
   });
 
   // ============ INIT ============
