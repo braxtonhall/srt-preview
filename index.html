@@ -963,6 +963,7 @@
 
   // ============ STATE ============
   let subtitles = [];
+  let subtitleIndexByMinute = {};
   let subtitleMode = 'source';
   let subtitleLoading = false;
   let currentEpisode = 0;
@@ -975,6 +976,10 @@
   let hoverTime = null;
   let dragState = null;
   let hoverEdge = null;
+  let hoverSubtitleIndex = -1;
+  let longPressTimer = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
   let manualScrollTimer = null;
 
   // Auth + edit state
@@ -1281,6 +1286,20 @@
 
     updateSidebarHighlight();
     if (waveformPeaks) drawWaveform();
+    buildSubtitleMinuteIndex();
+  }
+
+  function buildSubtitleMinuteIndex() {
+    subtitleIndexByMinute = {};
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
+      const startMin = Math.floor(sub.start / 60);
+      const endMin = Math.floor(sub.end / 60);
+      for (let m = startMin; m <= endMin; m++) {
+        if (!subtitleIndexByMinute[m]) subtitleIndexByMinute[m] = [];
+        subtitleIndexByMinute[m].push(i);
+      }
+    }
   }
 
   function renderDisplayRow(row, sub, i) {
@@ -1306,6 +1325,7 @@
         buildSidebar();
         const first = subtitleSidebar.querySelector('.sub-edit-input');
         if (first) first.focus();
+        scrollWaveformToSubtitle(i);
       });
       tools.appendChild(editBtn);
 
@@ -1364,6 +1384,16 @@
     if (insertBtn) row.appendChild(insertBtn);
 
     row.addEventListener('click', () => { video.currentTime = sub.start; });
+    row.addEventListener('dblclick', (e) => {
+      if (!authToken || editStates.has(i)) return;
+      editStates.set(i, {
+        start: sub.start, end: sub.end,
+        source1: sub.source1, source2: sub.source2,
+        trans1: sub.trans1, trans2: sub.trans2,
+      });
+      buildSidebar();
+      scrollWaveformToSubtitle(i);
+    });
   }
 
   function makeStatusBtn(sub, i) {
@@ -1571,6 +1601,7 @@
       }
       if (waveformPeaks) drawWaveform();
       updateSubtitleOverlay();
+      buildSubtitleMinuteIndex();
     }
 
     input.addEventListener('input', () => {
@@ -1581,6 +1612,7 @@
         editStates.get(index)[field] = parsed;
         if (waveformPeaks) drawWaveform();
         updateSubtitleOverlay();
+        buildSubtitleMinuteIndex();
       }
       syncValidity();
     });
@@ -2495,13 +2527,13 @@
       if (rw < 1) continue;
 
       if (isEditing) {
-        ctx.fillStyle = 'rgba(200,168,53,0.45)';
+        ctx.fillStyle = hoverSubtitleIndex === i ? 'rgba(200,168,53,0.6)' : 'rgba(200,168,53,0.45)';
       } else if (sub.flagged) {
-        ctx.fillStyle = 'rgba(200,168,53,0.3)';
+        ctx.fillStyle = hoverSubtitleIndex === i ? 'rgba(200,168,53,0.45)' : 'rgba(200,168,53,0.3)';
       } else if (sub.approved) {
-        ctx.fillStyle = 'rgba(58,110,165,0.12)';
+        ctx.fillStyle = hoverSubtitleIndex === i ? 'rgba(58,110,165,0.22)' : 'rgba(58,110,165,0.12)';
       } else {
-        ctx.fillStyle = 'rgba(58,110,165,0.2)';
+        ctx.fillStyle = hoverSubtitleIndex === i ? 'rgba(58,110,165,0.32)' : 'rgba(58,110,165,0.2)';
       }
 
       ctx.fillRect(rx, waveTop, rw, h - waveTop);
@@ -2594,15 +2626,30 @@
     }
 
     if (dragState && dragState.index < subtitles.length) {
-      const sv = editStates.has(dragState.index) ? editStates.get(dragState.index) : subtitles[dragState.index];
-      const ex = timeToPixel(sv[dragState.edge]);
-      if (ex >= 0 && ex <= w) {
-        ctx.strokeStyle = 'rgba(255,255,0,0.8)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(ex, 2);
-        ctx.lineTo(ex, h - 2);
-        ctx.stroke();
+      if (dragState.mode === 'move') {
+        const sv = editStates.has(dragState.index) ? editStates.get(dragState.index) : subtitles[dragState.index];
+        const sx = timeToPixel(sv.start);
+        const ex = timeToPixel(sv.end);
+        if (ex >= 0 && sx <= w) {
+          const rx = Math.max(0, sx);
+          const rw = Math.min(w, ex) - rx;
+          ctx.fillStyle = 'rgba(200,200,60,0.35)';
+          ctx.fillRect(rx, waveTop, rw, h - waveTop);
+          ctx.strokeStyle = 'rgba(200,200,60,0.85)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(rx, waveTop, rw, h - waveTop);
+        }
+      } else {
+        const sv = editStates.has(dragState.index) ? editStates.get(dragState.index) : subtitles[dragState.index];
+        const ex = timeToPixel(sv[dragState.edge]);
+        if (ex >= 0 && ex <= w) {
+          ctx.strokeStyle = 'rgba(255,255,0,0.8)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(ex, 2);
+          ctx.lineTo(ex, h - 2);
+          ctx.stroke();
+        }
       }
     }
 
@@ -2646,9 +2693,13 @@
     waveformDuration = 0;
     viewStart = 0;
     viewDuration = 0;
+    subtitleIndexByMinute = {};
     hoverTime = null;
     hoverEdge = null;
     dragState = null;
+    hoverSubtitleIndex = -1;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
     clearTimeout(manualScrollTimer);
     manualScrollTimer = null;
     waveformBar.style.display = 'none';
@@ -2689,8 +2740,22 @@
 
     if (bestEdge && authToken) {
       if (!editStates.has(bestEdge.index)) openEditForWaveform(bestEdge.index);
-      dragState = bestEdge;
+      dragState = { index: bestEdge.index, edge: bestEdge.edge };
       drawWaveform();
+      return;
+    }
+
+    if (containing !== -1 && authToken && editStates.has(containing)) {
+      longPressStartX = e.clientX;
+      longPressStartY = e.clientY;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        const sub = editStates.get(containing);
+        const clickOffset = t - sub.start;
+        dragState = { index: containing, mode: 'move', offset: clickOffset };
+        waveformCanvas.style.cursor = 'grabbing';
+        drawWaveform();
+      }, 150);
       return;
     }
 
@@ -2732,20 +2797,43 @@
     buildSidebar();
     const row = subtitleSidebar.querySelector('[data-index="' + i + '"]');
     if (row) row.scrollIntoView({ block: 'nearest' });
+    scrollWaveformToSubtitle(i);
+  }
+
+  function scrollWaveformToSubtitle(i) {
+    if (!waveformPeaks) return;
+    const sub = editStates.has(i) ? editStates.get(i) : subtitles[i];
+    const viewEnd = viewStart + viewDuration;
+    if (sub.end > viewStart && sub.start < viewEnd) return;
+    const subCenter = (sub.start + sub.end) / 2;
+    viewStart = subCenter - viewDuration / 2;
+    clampView();
+    drawWaveform();
   }
 
   waveformCanvas.addEventListener('mousemove', (e) => {
     if (!waveformPeaks) return;
+
+    if (longPressTimer) {
+      const dx = e.clientX - longPressStartX;
+      const dy = e.clientY - longPressStartY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
 
     const rect = waveformCanvas.getBoundingClientRect();
     const cssX = e.clientX - rect.left;
     hoverTime = pixelToTime(cssX);
 
     hoverEdge = null;
+    hoverSubtitleIndex = -1;
     const EDGE_PX = 8;
-    if (authToken) {
-      const containing = findContainingSubtitle(hoverTime);
-      if (containing !== -1) {
+    const containing = findContainingSubtitle(hoverTime);
+    if (containing !== -1) {
+      hoverSubtitleIndex = containing;
+      if (authToken) {
         const sub = editStates.has(containing) ? editStates.get(containing) : subtitles[containing];
         const sx = timeToPixel(sub.start);
         const ex = timeToPixel(sub.end);
@@ -2755,9 +2843,111 @@
         else if (dEnd <= EDGE_PX) { hoverEdge = { index: containing, edge: 'end' }; }
       }
     }
-    waveformCanvas.style.cursor = dragState ? 'col-resize' : (hoverEdge ? 'col-resize' : 'crosshair');
+
+    let cursor;
+    if (dragState) {
+      cursor = dragState.mode === 'move' ? 'grabbing' : 'col-resize';
+    } else if (hoverEdge) {
+      cursor = 'col-resize';
+    } else if (hoverSubtitleIndex !== -1 && authToken && editStates.has(hoverSubtitleIndex)) {
+      cursor = 'grab';
+    } else {
+      cursor = 'crosshair';
+    }
+    waveformCanvas.style.cursor = cursor;
 
     if (dragState) {
+      if (dragState.mode === 'move') {
+        const ds = dragState;
+        const ev = editStates.get(ds.index);
+        if (!ev) return;
+        const desiredStart = Math.round((pixelToTime(cssX) - ds.offset) * 1000) / 1000;
+        let newStart = desiredStart < 0 ? 0 : desiredStart;
+        const preCollisionStart = newStart;
+        const duration = ev.end - ev.start;
+        const newEnd = newStart + duration;
+
+        const minMinute = Math.floor((newStart - 1) / 60);
+        const maxMinute = Math.floor((newEnd + 1) / 60);
+        const collisionCandidates = new Set();
+        for (let m = minMinute; m <= maxMinute; m++) {
+          const indices = subtitleIndexByMinute[m];
+          if (indices) {
+            for (const idx of indices) {
+              if (idx !== ds.index) collisionCandidates.add(idx);
+            }
+          }
+        }
+
+        const blocked = [];
+        for (const ci of collisionCandidates) {
+          const cand = editStates.has(ci) ? editStates.get(ci) : subtitles[ci];
+          blocked.push({ start: cand.start, end: cand.end });
+        }
+        blocked.sort((a, b) => a.start - b.start);
+
+        const merged = [];
+        for (const b of blocked) {
+          if (merged.length === 0 || b.start > merged[merged.length - 1].end + 0.001) {
+            merged.push({ start: b.start, end: b.end });
+          } else {
+            merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, b.end);
+          }
+        }
+
+        let collides = false;
+        let firstOverlap = null;
+        let lastOverlap = null;
+        for (const m of merged) {
+          if (newStart < m.end - 0.001 && newEnd > m.start + 0.001) {
+            if (!firstOverlap) firstOverlap = m;
+            lastOverlap = m;
+            collides = true;
+          }
+        }
+
+        if (collides) {
+          const rightStart = lastOverlap.end + 0.001;
+          const leftStart = firstOverlap.start - duration - 0.001;
+
+          const isValid = (s) => {
+            if (s < 0) return false;
+            const e = s + duration;
+            for (const m of merged) {
+              if (s < m.end - 0.001 && e > m.start + 0.001) return false;
+            }
+            return true;
+          };
+
+          const validRight = isValid(rightStart);
+          const validLeft = isValid(leftStart);
+
+          if (validRight && validLeft) {
+            newStart = Math.abs(rightStart - desiredStart) <= Math.abs(leftStart - desiredStart) ? rightStart : leftStart;
+          } else if (validRight) {
+            newStart = rightStart;
+          } else if (validLeft) {
+            newStart = leftStart;
+          }
+        }
+
+        if (!collides || newStart !== preCollisionStart) {
+          ev.start = newStart < 0 ? 0 : newStart;
+          ev.end = ev.start + duration;
+          setTimingInput('start', ev.start, ds.index);
+          setTimingInput('end', ev.end, ds.index);
+          updateSubtitleOverlay();
+          buildSubtitleMinuteIndex();
+        }
+        drawWaveform();
+
+        waveformTooltip.style.display = 'block';
+        waveformTooltip.textContent = formatSRTTime(ev.start) + ' \u2013 ' + formatSRTTime(ev.end);
+        waveformTooltip.style.left = cssX + 'px';
+        waveformTooltip.style.top = (waveformCanvas.offsetTop + 2) + 'px';
+        return;
+      }
+
       const ds = dragState;
       const ev = editStates.get(ds.index);
       if (!ev) return;
@@ -2784,6 +2974,7 @@
       setTimingInput(ds.edge, newTime, ds.index);
       drawWaveform();
       updateSubtitleOverlay();
+      buildSubtitleMinuteIndex();
 
       waveformTooltip.style.display = 'block';
       waveformTooltip.textContent = formatSRTTime(newTime);
@@ -2800,7 +2991,21 @@
     drawWaveform();
   });
 
-  waveformCanvas.addEventListener('mouseup', () => {
+  waveformCanvas.addEventListener('mouseup', (e) => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      const t = eventToTime(e);
+      for (let i = 0; i < subtitles.length; i++) {
+        const ev = editStates.has(i) ? editStates.get(i) : subtitles[i];
+        if (t >= ev.start && t <= ev.end) {
+          video.currentTime = Math.max(0, Math.min(waveformDuration || Infinity, t));
+          return;
+        }
+      }
+      video.currentTime = Math.max(0, Math.min(waveformDuration || Infinity, t));
+      return;
+    }
     if (dragState) {
       dragState = null;
       drawWaveform();
@@ -2808,8 +3013,13 @@
   });
 
   waveformCanvas.addEventListener('mouseleave', () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
     hoverTime = null;
     hoverEdge = null;
+    hoverSubtitleIndex = -1;
     waveformTooltip.style.display = 'none';
     if (dragState) dragState = null;
     drawWaveform();
@@ -2834,6 +3044,10 @@
   }, { passive: false });
 
   waveformCanvas.addEventListener('dblclick', (e) => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
     if (!waveformPeaks || !authToken) return;
     const t = eventToTime(e);
     for (let i = 0; i < subtitles.length; i++) {
