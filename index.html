@@ -91,6 +91,21 @@
     color: #ccc;
   }
 
+  .sort-btn {
+    background: #1e1e1e;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .sort-btn:hover {
+    background: #333;
+  }
+
   .refresh-btn {
     background: #1e1e1e;
     color: #ccc;
@@ -874,6 +889,9 @@
     <button id="toggleTarget">Target</button>
     <button id="toggleBoth">Both</button>
   </div>
+  <button class="sort-btn" id="sortBtn" title="Sort subtitles by start time">
+    &#x21C5; Sort
+  </button>
   <button class="refresh-btn" id="refreshBtn" title="Refresh subtitles from spreadsheet">
     <span class="refresh-icon">&#x21bb;</span> Refresh
   </button>
@@ -1000,6 +1018,7 @@
   const toggleSourceBtn = document.getElementById('toggleSource');
   const toggleTargetBtn = document.getElementById('toggleTarget');
   const toggleBothBtn = document.getElementById('toggleBoth');
+  const sortBtn = document.getElementById('sortBtn');
   const refreshBtn = document.getElementById('refreshBtn');
   const subtitleStatus = document.getElementById('subtitleStatus');
   const mainArea = document.getElementById('mainArea');
@@ -1960,6 +1979,68 @@
     subtitleSidebar.querySelector(`[data-index="${afterIndex + 1}"]`)?.scrollIntoView({ block: 'nearest' });
   }
 
+  async function sortAndRewriteSubtitles() {
+    // Cancel any pending status debounce timers — indices will change after sort.
+    for (const key of Object.keys(statusDebounceTimers)) {
+      clearTimeout(statusDebounceTimers[key]);
+      delete statusDebounceTimers[key];
+    }
+
+    const episode = EPISODES[currentEpisode];
+    const { spreadsheetId, gid } = parseSpreadsheetUrl(episode.csvUrl);
+    const sheetName = await getSheetName(spreadsheetId, gid);
+    if (!sheetName) throw new Error('Could not determine sheet tab name');
+
+    const originalOrder = [...subtitles];
+
+    // Sort by start time, tie-break on end time.
+    subtitles.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    const values = subtitles.map(sub => [
+      sub.approved,
+      sub.flagged,
+      formatSRTTime(sub.start),
+      formatSRTTime(sub.end),
+      sub.source1,
+      sub.source2,
+      sub.trans1,
+      sub.trans2,
+    ]);
+
+    const range = `${sheetName}!A2:H${1 + subtitles.length}`;
+
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ range, majorDimension: 'ROWS', values }),
+      }
+    );
+
+    if (resp.status === 401) {
+      clearStoredToken();
+      authToken = null;
+      tokenClient.requestAccessToken();
+      throw new Error('Session expired — re-authenticating');
+    }
+    if (resp.status === 403) {
+      throw new Error("You don't have edit access to this spreadsheet");
+    }
+    if (!resp.ok) {
+      // Revert sort on failure.
+      subtitles.length = 0;
+      subtitles.push(...originalOrder);
+      throw new Error('Sort failed (HTTP ' + resp.status + ')');
+    }
+
+    buildSidebar();
+    updateSubtitleOverlay();
+  }
+
   async function saveSubtitleStatus(index, approved, flagged) {
     const episode = EPISODES[currentEpisode];
     const { spreadsheetId, gid } = parseSpreadsheetUrl(episode.csvUrl);
@@ -2078,6 +2159,25 @@
   toggleSourceBtn.addEventListener('click', () => setToggle('source'));
   toggleTargetBtn.addEventListener('click', () => setToggle('target'));
   toggleBothBtn.addEventListener('click', () => setToggle('both'));
+
+  // ============ SORT ============
+  sortBtn.addEventListener('click', async () => {
+    if (editStates.size > 0) {
+      alert('Please save your changes before sorting.');
+      return;
+    }
+    sortBtn.disabled = true;
+    sortBtn.textContent = 'Sorting…';
+    try {
+      await sortAndRewriteSubtitles();
+    } catch (err) {
+      console.error('Sort failed:', err);
+      alert('Sort failed: ' + err.message);
+    } finally {
+      sortBtn.disabled = false;
+      sortBtn.textContent = '\u21C5 Sort';
+    }
+  });
 
   // ============ REFRESH ============
   refreshBtn.addEventListener('click', () => {
