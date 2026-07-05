@@ -975,6 +975,13 @@
       verifySalt: "33a7335e782640f27263db82246ce6c1",
       verifyHash: "4c5316645546f5f736f75aea5a8e6ac59d8ff57aa277600914ae7ee949264e65",
     },
+    {
+      name: "Episode 2",
+      csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=429947479",
+      videoUrl: "assets/2.enc",
+verifySalt: "de0dd278f0e579f69595c59e1b287aeb",
+verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
+    },
   ];
 
   const CLIENT_ID = '191546084177-4e125svao3jpkgn57kd617nmtr8h92c4.apps.googleusercontent.com';
@@ -987,6 +994,7 @@
   let currentEpisode = 0;
   let cachedPassword = null;
   let objectUrl = null;
+  let waveformGenerationId = 0;
   let waveformPeaks = null;
   let waveformDuration = 0;
   let viewStart = 0;
@@ -2387,6 +2395,8 @@
   // ============ EPISODE SWITCHING ============
   async function switchEpisode(index) {
     currentEpisode = index;
+    video.pause();
+    resetWaveform();
 
     if (!cachedPassword) {
       showPasswordPrompt();
@@ -2519,9 +2529,11 @@
   }
 
   async function generateWaveform(audioData) {
+    const genId = waveformGenerationId;
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const audioBuffer = await audioCtx.decodeAudioData(audioData.slice(0));
+      if (genId !== waveformGenerationId) { audioCtx.close(); return; }
       waveformDuration = audioBuffer.duration;
 
       const rawData = audioBuffer.getChannelData(0);
@@ -2789,6 +2801,7 @@
   }
 
   function resetWaveform() {
+    waveformGenerationId++;
     waveformPeaks = null;
     waveformDuration = 0;
     viewStart = 0;
