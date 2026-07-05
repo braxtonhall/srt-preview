@@ -995,6 +995,8 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
   let cachedPassword = null;
   let objectUrl = null;
   let waveformGenerationId = 0;
+  let abortController = null;
+  let loadGeneration = 0;
   let waveformPeaks = null;
   let waveformDuration = 0;
   let viewStart = 0;
@@ -2214,9 +2216,9 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
     return bytesEqual(new Uint8Array(derivedBits), expectedHash);
   }
 
-  async function downloadAndDecrypt(videoUrl, password, onProgress) {
+  async function downloadAndDecrypt(videoUrl, password, onProgress, signal) {
     const url = new URL(videoUrl, window.location.href).href;
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) throw new Error('Failed to download video (HTTP ' + response.status + ')');
 
     const contentLength = +response.headers.get('Content-Length') || 0;
@@ -2301,7 +2303,7 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
   }
 
   // ============ VIDEO LOADING ============
-  async function loadVideo() {
+  async function loadVideo(generation) {
     const episode = EPISODES[currentEpisode];
     resetWaveform();
 
@@ -2310,7 +2312,9 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
         const pct = Math.round((received / total) * 100);
         progressBar.style.width = pct + '%';
         progressText.textContent = 'Downloading... ' + pct + '% (' + formatSize(received) + ' / ' + formatSize(total) + ')';
-      });
+      }, abortController ? abortController.signal : undefined);
+
+      if (generation !== loadGeneration) return;
 
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       const blob = new Blob([decrypted], { type: 'video/mp4' });
@@ -2328,6 +2332,7 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
 
       video.play().catch(() => {});
     } catch (err) {
+      if (err.name === 'AbortError') return;
       console.error('Failed to load video:', err);
       let message = err.message;
       if (err.name === 'OperationError') {
@@ -2356,7 +2361,8 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
         localStorage.setItem(PASSWORD_STORAGE_KEY, password);
         cachedPassword = password;
         showLoading();
-        await loadVideo();
+        loadGeneration++;
+        await loadVideo(loadGeneration);
       } else {
         lockFailed('Incorrect password');
       }
@@ -2386,7 +2392,8 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
   retryBtn.addEventListener('click', () => {
     if (cachedPassword) {
       showLoading();
-      loadVideo();
+      loadGeneration++;
+      loadVideo(loadGeneration);
     } else {
       showPasswordPrompt();
     }
@@ -2397,6 +2404,13 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
     currentEpisode = index;
     video.pause();
     resetWaveform();
+
+    if (abortController) {
+      abortController.abort();
+    }
+    abortController = new AbortController();
+    loadGeneration++;
+    const generation = loadGeneration;
 
     if (!cachedPassword) {
       showPasswordPrompt();
@@ -2415,7 +2429,7 @@ verifyHash: "ded16bf0545055520cd8ed1bcca1054e9858e6e3a8d8d69b6aee9f4d7b7df179",
       }
 
       showLoading();
-      await loadVideo();
+      await loadVideo(generation);
     } catch (err) {
       showError('Failed to switch episode: ' + err.message);
     }
