@@ -1,5 +1,7 @@
 *.mkv
 *.mp4
+*.enc.meta.json
 .env
 .DS_Store
 
+*.csv

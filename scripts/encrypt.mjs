@@ -36,7 +36,16 @@ const output = Buffer.concat([encryptSalt, iv, encrypted, authTag]);
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, output);
 
+const meta = {
+  outputPath,
+  verifySalt: verifySalt.toString('hex'),
+  verifyHash: verifyHash.toString('hex'),
+};
+const metaPath = outputPath + '.meta.json';
+fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
+
 console.log(`Encrypted: ${inputPath} -> ${outputPath}`);
+console.log(`Metadata: ${metaPath}`);
 console.log(`Original size: ${inputFile.length} bytes`);
 console.log(`Encrypted size: ${output.length} bytes`);
 console.log('');
