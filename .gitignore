@@ -3,5 +3,7 @@
 *.enc.meta.json
 .env
 .DS_Store
-
+*.log
 *.csv
+*.srt
+

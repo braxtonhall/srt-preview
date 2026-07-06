@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TRANS_DIR="$SCRIPT_DIR"
+PYTHON=/usr/local/bin/python3.9
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+  echo "Usage: $0 <video_file>"
+  echo ""
+  echo "  Transcribes Cantonese video, translates to English, and outputs"
+  echo "  a Google Sheets CSV with 8 columns:"
+  echo "    ✅ | ⚠️ | Start | End | Source 1 | Source 2 | Translation 1 | Translation 2"
+  echo ""
+  echo "  Outputs:"
+  echo "    <video>.csv       Google Sheets CSV (in same dir as video)"
+  echo ""
+  exit 1
+}
+
+[ $# -eq 1 ] || usage
+
+VIDEO="$1"
+
+if [ ! -f "$VIDEO" ]; then
+  echo -e "${RED}Error: video file not found: $VIDEO${NC}"
+  exit 1
+fi
+
+BASENAME="$(basename "$VIDEO" | sed 's/\.[^.]*$//')"
+VIDEO_DIR="$(cd "$(dirname "$VIDEO")" && pwd)"
+VIDEO_PATH="$VIDEO_DIR/$(basename "$VIDEO")"
+
+SRT_CANTO="$VIDEO_DIR/${BASENAME}.srt"
+SRT_ENGLISH="$VIDEO_DIR/${BASENAME}_en.srt"
+CSV="$VIDEO_DIR/${BASENAME}.csv"
+
+# Check deps
+if [ ! -x "$PYTHON" ]; then
+  echo -e "${RED}Error: Python 3.9 not found at $PYTHON${NC}"
+  exit 1
+fi
+$PYTHON -c "from faster_whisper import WhisperModel; from deep_translator import GoogleTranslator" 2>/dev/null || {
+  echo -e "${RED}Error: faster-whisper or deep-translator not installed for $PYTHON${NC}"
+  echo "Install with: $PYTHON -m pip install faster-whisper deep-translator"
+  exit 1
+}
+
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}  Step 1/3: Transcribing Cantonese audio${NC}"
+echo -e "${CYAN}========================================${NC}"
+
+$PYTHON "$TRANS_DIR/transcribe.py" "$VIDEO_PATH" -o "$SRT_CANTO"
+
+echo ""
+echo -e "${GREEN}  Cantonese SRT -> $SRT_CANTO${NC}"
+echo ""
+
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}  Step 2/3: Translating to English${NC}"
+echo -e "${CYAN}========================================${NC}"
+
+$PYTHON "$TRANS_DIR/translate.py" "$SRT_CANTO" -o "$SRT_ENGLISH"
+
+echo ""
+echo -e "${GREEN}  English SRT -> $SRT_ENGLISH${NC}"
+echo ""
+
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}  Step 3/3: Merging to CSV${NC}"
+echo -e "${CYAN}========================================${NC}"
+
+$PYTHON "$TRANS_DIR/srt_to_csv.py" "$SRT_CANTO" "$SRT_ENGLISH" -o "$CSV"
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}  Done: $CSV${NC}"
+echo -e "${GREEN}========================================${NC}"
