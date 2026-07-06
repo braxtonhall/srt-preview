@@ -3257,7 +3257,7 @@
         if (valid) {
           cachedPassword = storedPassword;
           showLoading();
-          await loadVideo();
+          await loadVideo(loadGeneration);
           return;
         }
       } catch (e) {
