@@ -972,50 +972,50 @@
       name: "Episode 1",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=142222312",
       videoUrl: "assets/1.enc",
-      verifySalt: "385433ab8424a4573da38a1b6eccffbf",
-      verifyHash: "f845508a32efbaa495bb2b22adb825c41ffa3ac9eaae0c1b49329a78e8603c4d",
+      verifySalt: "a2c786958a4869fdfc2437d28c5baec2",
+      verifyHash: "5da15e0ca2324d5b8bc7f951dee8ee0ff8c64809ed76929376a9681656790bf6",
     },
     {
       name: "Episode 2",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=429947479",
       videoUrl: "assets/2.enc",
-      verifySalt: "4802645c45e5f8e333b936f62d462c4c",
-      verifyHash: "1c14b400ec6ecc2bdc94adeac7416a026a16207e7ad84c14f60aea1b47ba64bd",
+      verifySalt: "d74f017c5d4ec1b66e23000db67b52f9",
+      verifyHash: "46a5ebef29ba1a5a21f26e908842449e1d4a65043dee1e790b18df0e6702e126",
     },
     {
       name: "Episode 3",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=1190125589",
       videoUrl: "assets/3.enc",
-      verifySalt: "e8917e031bf4dd643bc1e638c831f136",
-      verifyHash: "4e82a6805b6240ed9be6f7552ec914a3b0355282618527fbdab745bf27834457",
+      verifySalt: "1ee564f6fa90c8a4b95b5a5368d0bc96",
+      verifyHash: "5910c726070524b7f1d0cb86b64dc02d98c98ebeea5eed98ae5008e979aaf587",
     },
     {
       name: "Episode 4",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=570485430",
       videoUrl: "assets/4.enc",
-      verifySalt: "e7848915f7d62fce0b7731dfa21698d0",
-      verifyHash: "17d7e21a90ecca91eca060160e299b510f806d5ae7500734d92b406464ea253f",
+      verifySalt: "28eff55c684388164c18fa26d8d1ed44",
+      verifyHash: "8e7a036bada59620fbe48db8bb9d1121e2c7e2939ebc4520f268a82380f8049c",
     },
     {
       name: "Episode 5",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=1636724585",
       videoUrl: "assets/5.enc",
-      verifySalt: "9d58f1120c54ecb02a1010a4f3ec662c",
-      verifyHash: "abfc0875a4bc13f84a738beec9115487a826ae4a2613ebc88a1faae05d89eb90",
+      verifySalt: "32f160ff090309c65b0ffa5a543866a4",
+      verifyHash: "4f69dd23d1f474ec98b6d5c657348a297eed58b01fd2c5c9de13f3d2f3056e64",
     },
     {
       name: "Episode 6",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=1346030756",
       videoUrl: "assets/6.enc",
-      verifySalt: "5c33b43c15a0996e9aaa608b533b138e",
-      verifyHash: "472346d4911bf5b2b77d57220963fa0e2fb07790bbd5be0d11f13b73f58afc7c",
+      verifySalt: "933086db77c9baf94bc874ec617157f8",
+      verifyHash: "f113e589816775b69d2712dc17468949e38682b106d11aa89475915c4986258b",
     },
     {
       name: "Episode 7",
       csvUrl: "https://docs.google.com/spreadsheets/d/145FBocTawJJCysa0fj9YrNAVc5Ob-4GTrrJRrXcR-_o/export?format=csv&gid=1113400424",
       videoUrl: "assets/7.enc",
-      verifySalt: "63f9284a55d7e5f7c84f5e10616f4dd2",
-      verifyHash: "2167fccbe9ae2bf8fc421b88ee57bd088cc2aba83e99130bae6b55a8f9632cc2",
+      verifySalt: "6827bcd46be788738ecb5c971c6ca878",
+      verifyHash: "090788e8828ea5265155a4bacdc09da0cdb61d2541f67ddad477f7c23643ffae",
     },
   ];
 
@@ -1053,6 +1053,7 @@
   let statusDebounceTimers = {};  // subtitle index -> timeout ID
 
   const PASSWORD_STORAGE_KEY = 'sub_preview_password';
+  const EPISODE_STORAGE_KEY = 'sub_preview_episode';
   const PBKDF2_ITERATIONS = 100000;
   const KEY_BITS = 256;
   const SALT_BYTES = 16;
@@ -2437,6 +2438,7 @@
   // ============ EPISODE SWITCHING ============
   async function switchEpisode(index) {
     currentEpisode = index;
+    localStorage.setItem(EPISODE_STORAGE_KEY, index);
     video.pause();
     resetWaveform();
 
@@ -3247,11 +3249,17 @@
 
   // ============ INIT ============
   async function init() {
-    fetchSubtitles(EPISODES[0].csvUrl);
+    const storedEpisode = parseInt(localStorage.getItem(EPISODE_STORAGE_KEY));
+    if (!isNaN(storedEpisode) && storedEpisode >= 0 && storedEpisode < EPISODES.length) {
+      currentEpisode = storedEpisode;
+      episodeSelect.value = storedEpisode;
+    }
+
+    fetchSubtitles(EPISODES[currentEpisode].csvUrl);
 
     const storedPassword = localStorage.getItem(PASSWORD_STORAGE_KEY);
     if (storedPassword) {
-      const episode = EPISODES[0];
+      const episode = EPISODES[currentEpisode];
       try {
         const valid = await verifyPassword(storedPassword, episode.verifySalt, episode.verifyHash);
         if (valid) {
